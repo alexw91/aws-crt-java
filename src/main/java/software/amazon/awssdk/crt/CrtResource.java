@@ -14,11 +14,14 @@
  */
 package software.amazon.awssdk.crt;
 
+import java.util.Optional;
+
 /**
  * This wraps a native pointer to an AWS Common Runtime resource. It also ensures
  * that the first time a resource is referenced, the CRT will be loaded and bound.
  */
 public class CrtResource {
+    private static final long NULL = 0;
     private long ptr;
 
     static {
@@ -41,5 +44,9 @@ public class CrtResource {
 
     public long native_ptr() {
         return ptr;
+    }
+
+    public boolean isNull() {
+        return (ptr == NULL);
     }
 }

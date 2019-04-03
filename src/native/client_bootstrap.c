@@ -66,7 +66,7 @@ void JNICALL Java_software_amazon_awssdk_crt_io_ClientBootstrap_clientBootstrapD
         return;
     }
 
-    aws_client_bootstrap_destroy(bootstrap);
+    aws_client_bootstrap_release(bootstrap);
 }
 
 #if UINTPTR_MAX == 0xffffffff
