@@ -157,8 +157,8 @@ class MqttConnectionFixture {
         assertEquals("DISCONNECTED", MqttConnection.ConnectionState.DISCONNECTED, connection.getState());
     }
 }
-public class ConnectionTest extends MqttConnectionFixture {
-    public ConnectionTest() {
+public class MqttConnectionTest extends MqttConnectionFixture {
+    public MqttConnectionTest() {
     }
 
     @Test

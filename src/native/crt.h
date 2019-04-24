@@ -31,6 +31,26 @@ struct aws_allocator *aws_jni_get_allocator();
 void aws_jni_throw_runtime_exception(JNIEnv *env, const char *msg, ...);
 
 /*******************************************************************************
+ * aws_jni_byte_cursor_from_jbyteArray - Creates an aws_byte_cursor from a jbyteArray.
+ ******************************************************************************/
+struct aws_byte_cursor aws_jni_byte_cursor_from_jbyteArray(JNIEnv *env, jbyteArray array);
+
+/*******************************************************************************
+ * aws_jni_byte_cursor_from_jbyteArray - Creates an aws_byte_cursor from a jbyteArray.
+ ******************************************************************************/
+jbyteArray aws_jni_byte_array_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data);
+
+/*******************************************************************************
+ * jni_byte_buffer_copy_from_cursor - Creates a Java ByteBuffer from a native aws_byte_cursor
+ ******************************************************************************/
+jobject jni_byte_buffer_copy_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data);
+
+/*******************************************************************************
+ * jni_direct_byte_buffer_from_cursor - Creates a Java DirectByteBuffer from a native aws_byte_cursor
+ ******************************************************************************/
+jobject jni_direct_byte_buffer_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data);
+
+/*******************************************************************************
  * aws_jni_byte_cursor_from_jstring - Creates an aws_byte_cursor from the UTF-8
  * characters extracted from the supplied jstring. The string value is null-terminated.
  ******************************************************************************/

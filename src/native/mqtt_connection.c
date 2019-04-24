@@ -42,7 +42,7 @@ static struct {
 } s_async_callback = {0};
 
 void s_cache_async_callback(JNIEnv *env) {
-    jclass cls = (*env)->FindClass(env, "software/amazon/awssdk/crt/mqtt/MqttConnection$AsyncCallback");
+    jclass cls = (*env)->FindClass(env, "software/amazon/awssdk/crt/AsyncCallback");
     assert(cls);
     s_async_callback.on_success = (*env)->GetMethodID(env, cls, "onSuccess", "()V");
     assert(s_async_callback.on_success);

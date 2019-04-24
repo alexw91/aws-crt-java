@@ -37,6 +37,7 @@ public final class ClientBootstrap extends CrtResource implements Closeable {
         this.elg = new EventLoopGroup(numThreads);
         this.hostResolver = new HostResolver(elg);
         this.ownResources = true;
+        acquire(clientBootstrapNew(elg.native_ptr(), hostResolver.native_ptr()));
     }
 
     /**

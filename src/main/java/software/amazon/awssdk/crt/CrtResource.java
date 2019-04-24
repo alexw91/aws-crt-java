@@ -19,6 +19,7 @@ package software.amazon.awssdk.crt;
  * that the first time a resource is referenced, the CRT will be loaded and bound.
  */
 public class CrtResource {
+    private static final long NULL = 0;
     private long ptr;
 
     static {
@@ -41,5 +42,9 @@ public class CrtResource {
 
     public long native_ptr() {
         return ptr;
+    }
+
+    public boolean isNull() {
+        return (ptr == NULL);
     }
 }
