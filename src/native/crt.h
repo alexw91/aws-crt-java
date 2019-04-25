@@ -43,12 +43,17 @@ jbyteArray aws_jni_byte_array_from_cursor(JNIEnv *env, const struct aws_byte_cur
 /*******************************************************************************
  * jni_byte_buffer_copy_from_cursor - Creates a Java ByteBuffer from a native aws_byte_cursor
  ******************************************************************************/
-jobject jni_byte_buffer_copy_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data);
+jobject aws_jni_byte_buffer_copy_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data);
 
 /*******************************************************************************
  * jni_direct_byte_buffer_from_cursor - Creates a Java DirectByteBuffer from a native aws_byte_cursor
  ******************************************************************************/
-jobject jni_direct_byte_buffer_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data);
+jobject aws_jni_direct_byte_buffer_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data);
+
+/*******************************************************************************
+ * aws_jni_byte_buffer_get_position - Gets the Read/Write Position of a ByteBuffer
+ ******************************************************************************/
+int aws_jni_byte_buffer_get_position(JNIEnv *env, jobject java_byte_buffer);
 
 /*******************************************************************************
  * aws_jni_byte_cursor_from_jstring - Creates an aws_byte_cursor from the UTF-8

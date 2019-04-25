@@ -18,9 +18,7 @@ package software.amazon.awssdk.crt.http;
 import software.amazon.awssdk.crt.AsyncCallback;
 import software.amazon.awssdk.crt.CrtResource;
 import software.amazon.awssdk.crt.CrtRuntimeException;
-import software.amazon.awssdk.crt.http.HttpRequest.Header;
 import software.amazon.awssdk.crt.io.ClientBootstrap;
-import software.amazon.awssdk.crt.io.EventLoopGroup;
 import software.amazon.awssdk.crt.io.SocketOptions;
 import software.amazon.awssdk.crt.io.TlsContext;
 import software.amazon.awssdk.crt.io.TlsContextOptions;
@@ -32,6 +30,7 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 
 import static software.amazon.awssdk.crt.CRT.AWS_CRT_SUCCESS;
@@ -45,17 +44,21 @@ import static software.amazon.awssdk.crt.CRT.AWS_CRT_SUCCESS;
  * This class is not thread safe and should not be called from different threads.
  */
 public class HttpConnection extends CrtResource implements Closeable {
+    private static final String HTTP = "http";
     private static final String HTTPS = "https";
     private static final Charset UTF8 = StandardCharsets.UTF_8;
 
+    private boolean ownResources = false;
     private final ClientBootstrap clientBootstrap;
     private final SocketOptions socketOptions;
     private final TlsContext tlsContext;
     private final URI uri;
     private volatile ConnectionState connectionState = ConnectionState.DISCONNECTED;
     private HttpConnectionEvents userConnectionCallbacks;
+    private CompletableFuture<Boolean> connectedFuture;
     private AsyncCallback connectAck;
     private AsyncCallback disconnectAck;
+
 
     public enum ConnectionState {
         DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING,
@@ -79,7 +82,8 @@ public class HttpConnection extends CrtResource implements Closeable {
          * @param responseStatusCode The HTTP Response Status Code
          * @param nextHeaders The headers received in the latest IO event.
          */
-        void onHeaders(int responseStatusCode, Header[] nextHeaders){
+        void onHeaders(int responseStatusCode, HttpHeader[] nextHeaders){
+//            System.err.println("JniHttpCallbackHandler.onHeaders()");
             responseHandler.receiveHeaders(responseStatusCode, nextHeaders);
         }
 
@@ -88,6 +92,7 @@ public class HttpConnection extends CrtResource implements Closeable {
          * @param hasBody True if the HTTP Response had a Body, false otherwise.
          */
         void onHeadersDone(boolean hasBody){
+//            System.err.println("JniHttpCallbackHandler.onHeadersDone()");
             responseHandler.receiveHeadersDone(hasBody);
         }
 
@@ -99,6 +104,7 @@ public class HttpConnection extends CrtResource implements Closeable {
          * @return The new IO Window Size
          */
         void onResponseBody(ByteBuffer bodyBytesIn){
+//            System.err.println("JniHttpCallbackHandler.onResponseBody()");
             responseHandler.receiveResponseBody(bodyBytesIn);
         }
 
@@ -110,6 +116,7 @@ public class HttpConnection extends CrtResource implements Closeable {
          * @param errorCode The AWS CommonRuntime errorCode of the Response. Will be 0 if no error.
          */
         void onResponseComplete(int errorCode) {
+//            System.err.println("JniHttpCallbackHandler.onResponseComplete(): err_code: " + errorCode);
             responseHandler.receiveResponseBodyComplete(errorCode);
         }
 
@@ -120,14 +127,16 @@ public class HttpConnection extends CrtResource implements Closeable {
          * @return True if body stream is finished, false otherwise.
          */
         boolean sendOutgoingBody(ByteBuffer bodyBytesOut) throws IOException {
+//            System.err.println("JniHttpCallbackHandler.sendOutgoingBody()");
             boolean haveBody = request.getBody().isPresent();
             if (!haveBody) {
                 return true;
             }
 
             InputStream bodyStream = request.getBody().get();
-            // TODO: This is a Blocking read. Ideally this would be non-blocking.
             int old_position = bodyBytesOut.position();
+
+            // TODO: This is a Blocking read. Ideally this would be non-blocking.
             int amt_read = bodyStream.read(bodyBytesOut.array(), bodyBytesOut.position(), bodyBytesOut.remaining());
 
             if (amt_read <= 0) {
@@ -148,6 +157,11 @@ public class HttpConnection extends CrtResource implements Closeable {
      */
     public HttpConnection(URI uri) throws HttpException, CrtRuntimeException {
         this(uri, new ClientBootstrap(1), new SocketOptions(), new TlsContext(new TlsContextOptions()), null);
+        ownResources = true;
+    }
+
+    public CompletableFuture<Boolean> getConnectedFuture() {
+        return connectedFuture;
     }
 
     /**
@@ -168,13 +182,24 @@ public class HttpConnection extends CrtResource implements Closeable {
         this.tlsContext = tlsContext;
         this.userConnectionCallbacks = callbacks;
 
+
         String endpoint = uri.getHost();
         int port = uri.getPort();
 
-        CompletableFuture<Boolean> future = new CompletableFuture<>();
-        connectAck = AsyncCallback.wrapFuture(future, null);
+        if (port == -1) {
+            if (HTTP.equals(uri.getScheme())) {
+                port = 80;
+            } else {
+                port = 443;
+            }
+        }
+
+        connectedFuture = new CompletableFuture<>();
+        connectAck = AsyncCallback.wrapFuture(connectedFuture, null);
 
         try {
+            System.err.println("Endpoint: " + endpoint);
+            System.err.println("Port: " + port);
             acquire(httpConnectionNew(this,
                     clientBootstrap.native_ptr(),
                     socketOptions.native_ptr(),
@@ -193,6 +218,12 @@ public class HttpConnection extends CrtResource implements Closeable {
     public void close() {
         disconnect();
         httpConnectionRelease(release());
+
+        if (ownResources) {
+            tlsContext.close();
+            socketOptions.close();
+            clientBootstrap.close();
+        }
     }
 
     /**
@@ -206,6 +237,7 @@ public class HttpConnection extends CrtResource implements Closeable {
 
     // Called from native when the connection is established the first time
     private void onConnectionComplete(int errorCode) {
+        System.err.println("HttpConnection.onConnectionComplete()");
         if (errorCode == AWS_CRT_SUCCESS) {
             connectionState = ConnectionState.CONNECTED;
             if (connectAck != null) {
@@ -226,6 +258,7 @@ public class HttpConnection extends CrtResource implements Closeable {
 
     // Called from native when the connection is shutdown.
     private void onConnectionShutdown(int errorCode) {
+        System.err.println("HttpConnection.onConnectionShutdown()");
         connectionState = ConnectionState.DISCONNECTED;
         if (disconnectAck != null) {
             if (errorCode == AWS_CRT_SUCCESS) {
@@ -267,10 +300,23 @@ public class HttpConnection extends CrtResource implements Closeable {
             throw new HttpException("Invalid connection during executeRequest");
         }
 
+        if (connectionState != ConnectionState.CONNECTED) {
+            throw new HttpException("Http Connection is not established yet.");
+        }
+
+        HttpHeader[] headers;
+        if (request.getHeaders() == null || request.getHeaders().size() == 0) {
+            headers = new HttpHeader[]{};
+        } else {
+            headers = (HttpHeader[]) request.getHeaders().toArray();
+        }
+        System.err.println("Method: " + request.getMethod());
+        System.err.println("Path: " + request.getEncodedPath());
+        System.err.println("Headers: " + Arrays.toString(headers));
         httpConnectionExecuteRequest(native_ptr(),
                 request.getMethod(),
                 request.getEncodedPath(),
-                request.getHeaders(),
+                headers,
                 new JniHttpCallbackHandler(request, responseHandler));
     }
 
@@ -292,7 +338,7 @@ public class HttpConnection extends CrtResource implements Closeable {
     private static native void httpConnectionExecuteRequest(long connection,
                                                             String method,
                                                             String uri,
-                                                            Header[] headers,
+                                                            HttpHeader[] headers,
                                                             JniHttpCallbackHandler jniHttpCallbackHandler) throws CrtRuntimeException;
 
 

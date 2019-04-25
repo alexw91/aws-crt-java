@@ -15,8 +15,6 @@
 
 package software.amazon.awssdk.crt.http;
 
-import software.amazon.awssdk.crt.http.HttpRequest.Header;
-
 import java.nio.ByteBuffer;
 
 /**
@@ -30,7 +28,7 @@ public interface AsyncHttpResponseHandler {
      * @param responseStatusCode The HTTP Response Status Code
      * @param nextHeaders The headers received in the latest IO event.
      */
-    void receiveHeaders(int responseStatusCode, Header[] nextHeaders);
+    void receiveHeaders(int responseStatusCode, HttpHeader[] nextHeaders);
 
     /**
      * Called once all HTTP Headers are processed.

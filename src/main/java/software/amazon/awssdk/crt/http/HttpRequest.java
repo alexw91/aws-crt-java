@@ -16,8 +16,7 @@
 package software.amazon.awssdk.crt.http;
 
 import java.io.InputStream;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -26,53 +25,28 @@ import java.util.Optional;
 public class HttpRequest {
     private final String method;
     private final String encodedPath;
-    private final Header[] headers;
-    private final Optional<InputStream> body;
+    private final List<HttpHeader> headers;
+    private final InputStream body;
 
     /**
      * Simple Http Header Class
      */
-    public static class Header {
-        private final static Charset UTF8 = StandardCharsets.UTF_8;
-        private byte[] name;
-        private byte[] value;
 
-        public Header() {}
-
-        public Header(String name, String value){
-            // TODO: Header validation?
-            this.name = name.getBytes(UTF8);
-            this.value = value.getBytes(UTF8);
-        }
-
-        public String getName() {
-            if (name == null) {
-                return "";
-            }
-            return new String(name, UTF8);
-        }
-
-        public String getValue() {
-            if (value == null) {
-                return "";
-            }
-            return new String(value, UTF8);
-        }
-    }
 
     public HttpRequest(String method, String encodedPath) {
-        this(method, encodedPath, new Header[]{}, Optional.empty());
+        this(method, encodedPath, null, null);
     }
 
-    public HttpRequest(String method, String encodedPath, Header[] headers) {
-        this(method, encodedPath, headers, Optional.empty());
+    public HttpRequest(String method, String encodedPath, List<HttpHeader> headers) {
+        this(method, encodedPath, headers, null);
     }
 
-    public HttpRequest(String method, String encodedPath, Header[] headers, Optional<InputStream> body) {
+    public HttpRequest(String method, String encodedPath, List<HttpHeader> headers, InputStream body) {
         this.method = method;
         this.encodedPath = encodedPath;
-        this.headers = headers;
         this.body = body;
+        this.headers = headers;
+
     }
 
     public String getMethod() {
@@ -83,11 +57,11 @@ public class HttpRequest {
         return encodedPath;
     }
 
-    public Header[] getHeaders() {
+    public List<HttpHeader> getHeaders() {
         return headers;
     }
 
     public Optional<InputStream> getBody() {
-        return body;
+        return Optional.of(body);
     }
 }

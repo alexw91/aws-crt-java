@@ -15,6 +15,7 @@
 
 #include <jni.h>
 #include <crt.h>
+#include <string.h>
 
 #include <aws/common/condition_variable.h>
 #include <aws/common/mutex.h>
@@ -25,10 +26,12 @@
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
 #include <aws/io/host_resolver.h>
+#include <aws/io/logging.h>
 #include <aws/io/socket.h>
 #include <aws/io/socket_channel_handler.h>
 #include <aws/io/tls_channel_handler.h>
 
+#include <aws/http/http.h>
 #include <aws/http/connection.h>
 #include <aws/http/request_response.h>
 
@@ -107,7 +110,7 @@ static struct http_request_jni_async_callback *jni_http_request_async_callback_n
 
     // We need to call NewGlobalRef() on jobjects that we want to last after this native method returns to Java.
     // Otherwise Java's GC may free the jobject when Native still has a reference to it.
-    callback->jni_http_callback_handler = java_callback_handler ? (*env)->NewGlobalRef(env, java_callback_handler) : NULL;
+    callback->jni_http_callback_handler = (*env)->NewGlobalRef(env, java_callback_handler);
 
     return callback;
 }
@@ -124,7 +127,7 @@ static struct {
 void s_cache_http_response_handler(JNIEnv *env) {
     jclass cls = (*env)->FindClass(env, "software/amazon/awssdk/crt/http/HttpConnection$JniHttpCallbackHandler");
     assert(cls);
-    s_jni_http_callback_handler.onHeaders = (*env)->GetMethodID(env, cls, "onHeaders", "(I[Lsoftware/amazon/awssdk/crt/http/HttpRequest$Header;)V");
+    s_jni_http_callback_handler.onHeaders = (*env)->GetMethodID(env, cls, "onHeaders", "(I[Lsoftware/amazon/awssdk/crt/http/HttpHeader;)V");
     assert(s_jni_http_callback_handler.onHeaders);
 
     s_jni_http_callback_handler.onHeadersDone = (*env)->GetMethodID(env, cls, "onHeadersDone", "(Z)V");
@@ -148,7 +151,7 @@ static struct {
 } s_http_header_handler;
 
 void s_cache_http_header_handler(JNIEnv *env) {
-    jclass cls = (*env)->FindClass(env, "software/amazon/awssdk/crt/http/HttpRequest$Header");
+    jclass cls = (*env)->FindClass(env, "software/amazon/awssdk/crt/http/HttpHeader");
     assert(cls);
     s_http_header_handler.header_class = cls;
 
@@ -168,21 +171,33 @@ void s_cache_http_header_handler(JNIEnv *env) {
 
 static void s_on_http_conn_setup(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct http_jni_connection *http_jni_conn = (struct http_jni_connection *) user_data;
+    assert(http_jni_conn);
 
     // Save the native pointer
     http_jni_conn->native_http_conn = connection;
 
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "[http_connection.c:%d] Http Connection Connected! conn: %p, err: %d",
+            __LINE__, (void*) connection, error_code);
+
+
+
+    assert(s_http_connection.on_connection_complete);
+    assert(http_jni_conn->java_http_conn);
     // Call the Java Object's "onComplete" callback
     if (http_jni_conn->java_http_conn) {
         JNIEnv *env = aws_jni_get_thread_env(http_jni_conn->jvm);
         (*env)->CallVoidMethod(
             env, http_jni_conn->java_http_conn, s_http_connection.on_connection_complete, error_code);
     }
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "[http_connection.c:%d] Http Callback on_http_conn_setup Completed", __LINE__);
 
 }
 
 static void s_on_http_conn_shutdown(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct http_jni_connection *http_jni_conn = (struct http_jni_connection *) user_data;
+
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "[http_connection.c:%d] Http Connection ShutDown! conn: %p, err: %d",
+                __LINE__, (void*) connection, error_code);
 
     // Call the Java Object's "onShutdown" callback
     if (http_jni_conn->java_http_conn) {
@@ -190,7 +205,7 @@ static void s_on_http_conn_shutdown(struct aws_http_connection *connection, int 
         (*env)->CallVoidMethod(
             env, http_jni_conn->java_http_conn, s_http_connection.on_connection_shutdown, error_code);
     }
-
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "[http_connection.c:%d] Http Callback on_http_conn_shutdown Completed", __LINE__);
 }
 
 /**
@@ -232,6 +247,7 @@ JNIEXPORT long JNICALL
     // TODO: Better TLS Detection?
     int use_tls = !(port == 80 || port == 8080);
     struct aws_tls_connection_options tls_conn_options = {0};
+
     if (use_tls) {
         if (!jni_tls_ctx) {
             aws_jni_throw_runtime_exception(env, "HttpConnection.httpConnectionNew: jni_tls_ctx_options must not be null");
@@ -256,21 +272,32 @@ JNIEXPORT long JNICALL
     (void)jvmresult;
     assert(jvmresult == 0);
 
-    struct aws_http_client_connection_options http_options = {
-            .allocator = allocator,
-            .bootstrap = client_bootstrap,
-            .host_name = endpoint,
-            .port = port,
-            .socket_options = socket_options,
-            .tls_options = &tls_conn_options,
-            .user_data = http_jni_conn,
-            .on_setup = s_on_http_conn_setup,
-            .on_shutdown = s_on_http_conn_shutdown
-    };
-    aws_http_client_connect(&http_options);
+    struct aws_http_client_connection_options http_options = AWS_HTTP_CLIENT_CONNECTION_OPTIONS_INIT;
+    http_options.self_size = sizeof(struct aws_http_client_connection_options);
+    http_options.allocator = allocator;
+    http_options.bootstrap = client_bootstrap;
+    http_options.host_name = endpoint;
+    http_options.port = port;
+    http_options.socket_options = socket_options;
+    http_options.tls_options = NULL;
+    http_options.user_data = http_jni_conn;
+    http_options.on_setup = s_on_http_conn_setup;
+    http_options.on_shutdown = s_on_http_conn_shutdown;
+
 
     if (use_tls) {
+        http_options.tls_options =  &tls_conn_options;
+    }
+
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "Creating new Http Connection: use_tls: %d", use_tls);
+    int rc = aws_http_client_connect(&http_options);
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "Http Connection Created.");
+    if (use_tls) {
         aws_tls_connection_options_clean_up(&tls_conn_options);
+    }
+
+    if (rc != AWS_OP_SUCCESS) {
+        aws_jni_throw_runtime_exception(env, "HttpConnection.httpConnectionNew: There was an error creating your connection.");
     }
 
     return (jlong) http_jni_conn;
@@ -294,7 +321,7 @@ JNIEXPORT void JNICALL
 }
 
 JNIEXPORT void JNICALL
-    Java_software_amazon_awssdk_crt_http_HttpConnection_httpConnectionDestroy(JNIEnv *env,
+    Java_software_amazon_awssdk_crt_http_HttpConnection_httpConnectionRelease(JNIEnv *env,
                                                                               jclass jni_class,
                                                                               jlong jni_connection) {
     struct http_jni_connection *http_jni_conn = (struct http_jni_connection *) jni_connection;
@@ -312,7 +339,13 @@ static jobjectArray s_java_headers_array_from_native(struct http_request_jni_asy
                                                      size_t num_headers) {
 
     JNIEnv *env = aws_jni_get_thread_env(callback->connection->jvm);
-    jobjectArray myArray = (*env)->NewObjectArray(env, (jsize) num_headers, s_http_header_handler.header_class, NULL);
+
+    assert(s_http_header_handler.header_class);
+    assert(s_http_header_handler.constructor);
+    assert(s_http_header_handler.name);
+    assert(s_http_header_handler.value);
+
+    jobjectArray jArray = (*env)->NewObjectArray(env, (jsize) num_headers, s_http_header_handler.header_class, NULL);
 
     for (int i = 0; i < num_headers; i++) {
         jobject jHeader = (*env)->NewObject(env, s_http_header_handler.header_class, s_http_header_handler.constructor);
@@ -323,9 +356,10 @@ static jobjectArray s_java_headers_array_from_native(struct http_request_jni_asy
         // Overwrite with actual values
         (*env)->SetObjectField(env, jHeader, s_http_header_handler.name, actual_name);
         (*env)->SetObjectField(env, jHeader, s_http_header_handler.value, actual_value);
+        (*env)->SetObjectArrayElement(env, jArray, i, jHeader);
     }
 
-    return myArray;
+    return jArray;
 }
 
 static void s_on_incoming_headers_fn(struct aws_http_stream *stream,
@@ -339,8 +373,14 @@ static void s_on_incoming_headers_fn(struct aws_http_stream *stream,
     int resp_status;
     int err_code = aws_http_stream_get_incoming_response_status(stream, &resp_status);
 
-    if (err_code) {
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_STREAM, "[http_connection.c:%d] Incoming Headers: conn: %p, stream: %p, status: %d,"
+            " num_headers: %d", __LINE__, (void*) callback->connection->native_http_conn, (void*) stream, resp_status,
+            (int) num_headers);
+
+    if (err_code != AWS_OP_SUCCESS) {
         // TODO: Is this valid?
+        AWS_LOGF_DEBUG(AWS_LS_HTTP_STREAM, "[http_connection.c:%d] Unknown Response Status! conn: %p, stream: %p,"
+                    " num_headers: %d", __LINE__, (void*) callback->connection->native_http_conn, (void*) stream, (int) num_headers);
         (*env)->CallVoidMethod(env, callback->jni_http_callback_handler, s_jni_http_callback_handler.onResponseComplete, err_code);
     }
 
@@ -351,6 +391,9 @@ static void s_on_incoming_header_block_done_fn(struct aws_http_stream *stream, b
     struct http_request_jni_async_callback *callback = (struct http_request_jni_async_callback *) user_data;
     JNIEnv *env = aws_jni_get_thread_env(callback->connection->jvm);
 
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_STREAM, "[http_connection.c:%d] Http Request Headers Done! conn: %p, stream: %p",
+                    __LINE__, (void*) callback->connection->native_http_conn, (void*) stream);
+
     jboolean jHasBody = has_body;
     (*env)->CallVoidMethod(env, callback->jni_http_callback_handler, s_jni_http_callback_handler.onHeadersDone, jHasBody);
 
@@ -360,6 +403,9 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
 
     struct http_request_jni_async_callback *callback = (struct http_request_jni_async_callback *) user_data;
     JNIEnv *env = aws_jni_get_thread_env(callback->connection->jvm);
+
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_STREAM, "[http_connection.c:%d] Http Request Finished! conn: %p, stream: %p, err: %d",
+                __LINE__, (void*) callback->connection->native_http_conn, (void*) stream, error_code);
 
     jint jErrorCode = error_code;
     (*env)->CallVoidMethod(env, callback->jni_http_callback_handler, s_jni_http_callback_handler.onResponseComplete, jErrorCode);
@@ -375,12 +421,16 @@ static void s_on_incoming_body_fn(struct aws_http_stream *stream,
     JNIEnv *env = aws_jni_get_thread_env(callback->connection->jvm);
 
     // TODO: Use DirectByteBuffer instead of copy?
-    jobject jByteBuffer = jni_byte_buffer_copy_from_cursor(env, data);
+    jobject jByteBuffer = aws_jni_byte_buffer_copy_from_cursor(env, data);
 
 
     (*env)->CallVoidMethod(env, callback->jni_http_callback_handler, s_jni_http_callback_handler.onResponseBody, jByteBuffer);
 
-    // TODO: Check actual bytes read from ByteBuffer, so we know how to update out_window_update_size
+    int position = aws_jni_byte_buffer_get_position(env, jByteBuffer);
+
+    assert(position >= 0);
+
+    *out_window_update_size = position;
 }
 
 enum aws_http_outgoing_body_state s_stream_outgoing_body_fn(struct aws_http_stream *stream,
@@ -392,14 +442,13 @@ enum aws_http_outgoing_body_state s_stream_outgoing_body_fn(struct aws_http_stre
     struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(buf);
 
     // TODO: Create new ByteBuffer instead of Direct?
-    jobject jDirectByteBuffer = jni_direct_byte_buffer_from_cursor(env, &cursor);
+    jobject jDirectByteBuffer = aws_jni_direct_byte_buffer_from_cursor(env, &cursor);
 
     jboolean isDone = (*env)->CallBooleanMethod(env, callback->jni_http_callback_handler,
                                                 s_jni_http_callback_handler.sendOutgoingBody, jDirectByteBuffer);
 
-    // TODO: Make s_java_byte_buffer extern
-    //jint position = (*env)->CallIntMethod(env, jDirectByteBuffer, s_java_byte_buffer.get_position);
-   // buf->len = position;
+    int position = aws_jni_byte_buffer_get_position(env, jDirectByteBuffer);
+    buf->len = position;
 
     if (isDone) {
         return AWS_HTTP_OUTGOING_BODY_DONE;
@@ -420,19 +469,19 @@ JNIEXPORT void JNICALL
     struct http_jni_connection *http_jni_conn = (struct http_jni_connection *) jni_connection;
 
     if (!http_jni_conn) {
-       aws_jni_throw_runtime_exception(env, "HttpConnection.ExecuteRequest: Invalid connection");
+       aws_jni_throw_runtime_exception(env, "HttpConnection.ExecuteRequest: Invalid jni_connection");
        return;
    }
 
     if (!jni_callback_handler) {
-        aws_jni_throw_runtime_exception(env, "HttpConnection.ExecuteRequest: Invalid handler");
+        aws_jni_throw_runtime_exception(env, "HttpConnection.ExecuteRequest: Invalid jni_callback_handler");
         return ;
     }
 
     struct http_request_jni_async_callback *callback_handler = jni_http_request_async_callback_new(http_jni_conn, jni_callback_handler);
 
     if (!callback_handler) {
-        aws_jni_throw_runtime_exception(env, "HttpConnection.ExecuteRequest: Unable to allocate handler");
+        aws_jni_throw_runtime_exception(env, "HttpConnection.ExecuteRequest: Unable to allocate http_request_jni_async_callback");
         return;
     }
 
@@ -442,6 +491,9 @@ JNIEXPORT void JNICALL
 
     struct aws_http_header headers[num_headers];
     AWS_ZERO_ARRAY(headers);
+
+    assert(s_http_header_handler.name);
+    assert(s_http_header_handler.value);
 
     for (int i = 0; i < num_headers; i++) {
         jobject jHeader = (*env)->GetObjectArrayElement(env, jni_headers, i);
@@ -453,6 +505,7 @@ JNIEXPORT void JNICALL
     }
 
     struct aws_http_request_options request_options = AWS_HTTP_REQUEST_OPTIONS_INIT;
+    request_options.client_connection = http_jni_conn->native_http_conn;
     request_options.method = method;
     request_options.uri = uri;
     request_options.header_array = headers;
@@ -466,6 +519,12 @@ JNIEXPORT void JNICALL
     request_options.on_complete = s_on_stream_complete_fn;
     request_options.user_data = callback_handler;
 
-    aws_http_stream_new_client_request(&request_options);
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "[http_connection.c:%d] Creating new Http Request", __LINE__);
+    struct aws_http_stream *req = aws_http_stream_new_client_request(&request_options);
+
+    if (req == NULL) {
+        aws_jni_throw_runtime_exception(env, "HttpConnection.ExecuteRequest: Unable to Execute Request");
+        return;
+    }
 
 }

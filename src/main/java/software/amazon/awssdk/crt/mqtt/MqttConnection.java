@@ -21,6 +21,8 @@ import software.amazon.awssdk.crt.CrtResource;
 import software.amazon.awssdk.crt.io.SocketOptions;
 import software.amazon.awssdk.crt.io.TlsContext;
 
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.nio.ByteBuffer;
@@ -269,7 +271,7 @@ public class MqttConnection extends CrtResource implements Closeable {
             future.completeExceptionally(new MqttException("Invalid connection during unsubscribe"));
             return future;
         }
-
+        ServerSocket s;
         AsyncCallback unsubAck = AsyncCallback.wrapFuture(future, 0);
         int packetId = mqttConnectionUnsubscribe(native_ptr(), topic, unsubAck);
         // When the future completes, complete the returned future with the packetId

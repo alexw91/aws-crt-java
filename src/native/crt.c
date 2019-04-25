@@ -99,16 +99,21 @@ jbyteArray aws_jni_byte_array_from_cursor(JNIEnv *env, const struct aws_byte_cur
     return jArray;
 }
 
-jobject jni_byte_buffer_copy_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data) {
+jobject aws_jni_byte_buffer_copy_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data) {
     jbyteArray jArray = aws_jni_byte_array_from_cursor(env, native_data);
     jobject jByteBuffer = (*env)->CallStaticObjectMethod(env, s_java_byte_buffer.cls, s_java_byte_buffer.wrap, jArray);
     // TODO: Set ByteBuffer Limit?
     return jByteBuffer;
 }
 
-jobject jni_direct_byte_buffer_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data) {
+jobject aws_jni_direct_byte_buffer_from_cursor(JNIEnv *env, const struct aws_byte_cursor *native_data) {
     // TODO: Set ByteBuffer Limit?
     return (*env)->NewDirectByteBuffer(env, (void*) native_data->ptr, native_data->len);
+}
+
+int aws_jni_byte_buffer_get_position(JNIEnv *env, jobject java_byte_buffer) {
+    jint position = (*env)->CallIntMethod(env, java_byte_buffer, s_java_byte_buffer.get_position);
+    return (int) position;
 }
 
 struct aws_byte_cursor aws_jni_byte_cursor_from_jstring(JNIEnv *env, jstring str) {
@@ -173,7 +178,7 @@ static void s_cache_jni_classes(JNIEnv *env) {
 #    pragma warning(pop)
 #endif
 
-// static struct aws_logger s_logger;
+static struct aws_logger s_logger;
 
 static void s_jni_atexit(void) {
     // aws_logger_clean_up(&s_logger);
@@ -193,13 +198,13 @@ void JNICALL Java_software_amazon_awssdk_crt_CRT_awsCrtInit(JNIEnv *env, jclass 
     aws_tls_init_static_state(allocator);
     aws_http_library_init(allocator);
 
-    // struct aws_logger_standard_options log_options = {.level = AWS_LL_TRACE, .file = stderr};
-    // if (aws_logger_init_standard(&s_logger, allocator, &log_options)) {
-    //     aws_jni_throw_runtime_exception(env, "Failed to initialize logging");
-    //     return;
-    // }
+     struct aws_logger_standard_options log_options = {.level = AWS_LL_DEBUG, .file = stderr};
+     if (aws_logger_init_standard(&s_logger, allocator, &log_options)) {
+         aws_jni_throw_runtime_exception(env, "Failed to initialize logging");
+         return;
+     }
 
-    // aws_logger_set(&s_logger);
+     aws_logger_set(&s_logger);
 
     s_cache_jni_classes(env);
 
