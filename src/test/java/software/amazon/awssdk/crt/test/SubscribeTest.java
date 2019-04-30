@@ -40,30 +40,30 @@ public class SubscribeTest extends MqttConnectionFixture {
 
     int subsAcked = 0;
 
-    @Test
-    public void testSubscribeUnsubscribe() {
-        connect();
-
-        Consumer<MqttMessage> messageHandler = (message) -> { };
-
-        try {
-            CompletableFuture<Integer> subscribed = connection.subscribe(TEST_TOPIC, QualityOfService.AT_LEAST_ONCE, messageHandler);
-            subscribed.thenAccept(packetId -> subsAcked++);
-            subscribed.get();
-
-            assertEquals("Single subscription", 1, subsAcked);
-
-            CompletableFuture<Integer> unsubscribed = connection.unsubscribe(TEST_TOPIC);
-            unsubscribed.thenAccept(packetId -> subsAcked--);
-            unsubscribed.get();
-
-            assertEquals("No Subscriptions", 0, subsAcked);
-        } catch (Exception ex) {
-            fail(ex.getMessage());
-        }
-
-        disconnect();
-        this.close();
-        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
-    }
+//    @Test
+//    public void testSubscribeUnsubscribe() {
+//        connect();
+//
+//        Consumer<MqttMessage> messageHandler = (message) -> { };
+//
+//        try {
+//            CompletableFuture<Integer> subscribed = connection.subscribe(TEST_TOPIC, QualityOfService.AT_LEAST_ONCE, messageHandler);
+//            subscribed.thenAccept(packetId -> subsAcked++);
+//            subscribed.get();
+//
+//            assertEquals("Single subscription", 1, subsAcked);
+//
+//            CompletableFuture<Integer> unsubscribed = connection.unsubscribe(TEST_TOPIC);
+//            unsubscribed.thenAccept(packetId -> subsAcked--);
+//            unsubscribed.get();
+//
+//            assertEquals("No Subscriptions", 0, subsAcked);
+//        } catch (Exception ex) {
+//            fail(ex.getMessage());
+//        }
+//
+//        disconnect();
+//        this.close();
+//        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
+//    }
 };

@@ -87,20 +87,16 @@ public class HttpConnectionTest {
 
         conn.disconnect().get(30, TimeUnit.SECONDS);
         conn.close();
-        System.out.println("Curr Native Resources Count: " + CrtResource.getAllocatedNativeResourceCount());
-        System.out.println("Curr Native Resources: " + CrtResource.getAllocatedNativeResources());
+        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
     }
 
-//    @Test
-//    public void testRequest() throws Exception {
-//        testRequest(new URI("https://aws-crt-test-stuff.s3.amazonaws.com"), "GET", "/http_test_doc.txt", "", 200, TEST_DOC_SHA256);
-//        testRequest(new URI("https://httpbin.org"), "GET", "/get", "", 200, null);
-//        testRequest(new URI("https://httpbin.org"), "POST", "/post", "", 200, null);
-//        testRequest(new URI("https://httpbin.org"), "GET", "/status/200", "", 200, null);
-//        testRequest(new URI("https://httpbin.org"), "GET", "/status/300", "", 300, null);
-//        testRequest(new URI("https://httpbin.org"), "GET", "/status/400", "", 400, null);
-//        //testRequest(new URI("https://aws-crt-test-stuff.s3.amazonaws.com"), "GET", "/http_test_doc.txt", 200, TEST_DOC_SHA256);
-//        //testRequest(new URI("https://aws-crt-test-stuff.s3.amazonaws.com"), "GET", "/http_test_doc.txt", 200, TEST_DOC_SHA256);
-//
-//    }
+    @Test
+    public void testRequest() throws Exception {
+        testRequest(new URI("https://aws-crt-test-stuff.s3.amazonaws.com"), "GET", "/http_test_doc.txt", "", 200, TEST_DOC_SHA256);
+        testRequest(new URI("https://httpbin.org"), "GET", "/get", "", 200, null);
+        testRequest(new URI("https://httpbin.org"), "POST", "/post", "", 200, null);
+        testRequest(new URI("https://httpbin.org"), "GET", "/status/200", "", 200, null);
+        testRequest(new URI("https://httpbin.org"), "GET", "/status/300", "", 300, null);
+        testRequest(new URI("https://httpbin.org"), "GET", "/status/400", "", 400, null);
+    }
 }

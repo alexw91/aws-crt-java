@@ -32,18 +32,18 @@ public class PingTest extends MqttConnectionFixture {
     public PingTest() {
     }
 
-    @Test
-    public void testPing() {
-        connect();
-
-        try {
-            connection.ping();
-        } catch (MqttException mqttEx) {
-            fail(mqttEx.getMessage());
-        }
-
-        disconnect();
-        this.close();
-        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
-    }
+//    @Test
+//    public void testPing() {
+//        connect();
+//
+//        try {
+//            connection.ping();
+//        } catch (MqttException mqttEx) {
+//            fail(mqttEx.getMessage());
+//        }
+//
+//        disconnect();
+//        this.close();
+//        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
+//    }
 };

@@ -22,7 +22,7 @@ public class HostResolver extends CrtResource implements Closeable {
 
     @Override
     public void close() {
-        if (native_ptr() != 0) {
+        if (!isNull()) {
             hostResolverRelease(release());
         }
     }

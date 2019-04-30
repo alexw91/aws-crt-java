@@ -39,30 +39,30 @@ public class IotServiceTest extends MqttConnectionFixture {
 
     int subsAcked = 0;
 
-    @Test
-    public void testIotService() {
-        connect( true, (short)0);
-
-        Consumer<MqttMessage> messageHandler = (message) -> {};
-
-        try {
-            CompletableFuture<Integer> subscribed = connection.subscribe(TEST_TOPIC, QualityOfService.AT_LEAST_ONCE, messageHandler);
-            subscribed.thenApply(packetId -> subsAcked++);
-            subscribed.get();
-
-            assertEquals("Single subscription", 1, subsAcked);
-
-            CompletableFuture<Integer> unsubscribed = connection.unsubscribe(TEST_TOPIC);
-            unsubscribed.thenApply(packetId -> subsAcked--);
-            unsubscribed.get();
-
-            assertEquals("No Subscriptions", 0, subsAcked);
-        } catch (Exception ex) {
-            fail(ex.getMessage());
-        }
-
-        disconnect();
-        this.close();
-        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
-    }
+//    @Test
+//    public void testIotService() {
+//        connect( true, (short)0);
+//
+//        Consumer<MqttMessage> messageHandler = (message) -> {};
+//
+//        try {
+//            CompletableFuture<Integer> subscribed = connection.subscribe(TEST_TOPIC, QualityOfService.AT_LEAST_ONCE, messageHandler);
+//            subscribed.thenApply(packetId -> subsAcked++);
+//            subscribed.get();
+//
+//            assertEquals("Single subscription", 1, subsAcked);
+//
+//            CompletableFuture<Integer> unsubscribed = connection.unsubscribe(TEST_TOPIC);
+//            unsubscribed.thenApply(packetId -> subsAcked--);
+//            unsubscribed.get();
+//
+//            assertEquals("No Subscriptions", 0, subsAcked);
+//        } catch (Exception ex) {
+//            fail(ex.getMessage());
+//        }
+//
+//        disconnect();
+//        this.close();
+//        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
+//    }
 };

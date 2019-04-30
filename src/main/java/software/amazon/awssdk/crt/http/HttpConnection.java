@@ -156,7 +156,7 @@ public class HttpConnection extends CrtResource implements Closeable {
      * @throws HttpException If httpClient is null
      */
     public HttpConnection(URI uri) throws HttpException, CrtRuntimeException {
-        this(uri, new ClientBootstrap(1), new SocketOptions(), new TlsContext(new TlsContextOptions()), null);
+        this(uri, new ClientBootstrap(1), new SocketOptions(), new TlsContext(), null);
         ownResources = true;
     }
 

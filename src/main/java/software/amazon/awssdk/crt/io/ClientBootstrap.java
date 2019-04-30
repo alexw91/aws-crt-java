@@ -24,9 +24,6 @@ import java.io.Closeable;
  * a client context for all protocol stacks in the AWS Common Runtime.
  */
 public final class ClientBootstrap extends CrtResource implements Closeable {
-    private final HostResolver hostResolver;
-    private final EventLoopGroup elg;
-    private final boolean ownResources;
 
     /**
      * Creates a new ClientBootstrap. Most applications will only ever need one instance of this.
@@ -34,9 +31,8 @@ public final class ClientBootstrap extends CrtResource implements Closeable {
      * @throws CrtRuntimeException If the system is unable to allocate space for a native client bootstrap object
      */
     public ClientBootstrap(int numThreads) throws CrtRuntimeException {
-        this.elg = new EventLoopGroup(numThreads);
-        this.hostResolver = new HostResolver(elg);
-        this.ownResources = true;
+        EventLoopGroup elg = own(new EventLoopGroup(numThreads));
+        HostResolver hostResolver = own(new HostResolver(elg));
         acquire(clientBootstrapNew(elg.native_ptr(), hostResolver.native_ptr()));
     }
 
@@ -48,21 +44,15 @@ public final class ClientBootstrap extends CrtResource implements Closeable {
      * or if the system is unable to allocate space for a native client bootstrap object
      */
     public ClientBootstrap(EventLoopGroup elg, HostResolver hr) throws CrtRuntimeException {
-        this.hostResolver = hr;
-        this.elg = elg;
-        this.ownResources = false;
-        acquire(clientBootstrapNew(elg.native_ptr(), hostResolver.native_ptr()));
+        acquire(clientBootstrapNew(elg.native_ptr(), hr.native_ptr()));
     }
 
     @Override
     public void close() {
-        if (native_ptr() != 0) {
+        if (!isNull()) {
             clientBootstrapDestroy(release());
         }
-        if (ownResources) {
-            hostResolver.close();
-            elg.close();
-        }
+        super.close();
     }
 
     /*******************************************************************************

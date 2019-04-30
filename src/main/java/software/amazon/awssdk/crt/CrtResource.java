@@ -14,17 +14,21 @@
  */
 package software.amazon.awssdk.crt;
 
+import java.io.Closeable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * This wraps a native pointer to an AWS Common Runtime resource. It also ensures
  * that the first time a resource is referenced, the CRT will be loaded and bound.
  */
-public class CrtResource {
+public class CrtResource implements Closeable {
     private static final ConcurrentHashMap<Long, String> NATIVE_RESOURCES = new ConcurrentHashMap<>();
 
+    protected final List<CrtResource> ownedSubResources = new ArrayList<>();
     private static final long NULL = 0;
     private long ptr;
 
@@ -65,4 +69,15 @@ public class CrtResource {
         return (ptr == NULL);
     }
 
+    public <T extends CrtResource> T own(T resource) {
+        ownedSubResources.add(resource);
+        return resource;
+    }
+
+    @Override
+    public void close() {
+        for(CrtResource r: ownedSubResources) {
+            r.close();
+        }
+    }
 }
