@@ -21,17 +21,14 @@ import software.amazon.awssdk.crt.CrtRuntimeException;
 import software.amazon.awssdk.crt.io.ClientBootstrap;
 import software.amazon.awssdk.crt.io.SocketOptions;
 import software.amazon.awssdk.crt.io.TlsContext;
-import software.amazon.awssdk.crt.io.TlsContextOptions;
 
-import java.io.Closeable;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
-import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 import static software.amazon.awssdk.crt.CRT.AWS_CRT_SUCCESS;
 
@@ -43,7 +40,7 @@ import static software.amazon.awssdk.crt.CRT.AWS_CRT_SUCCESS;
  *
  * This class is not thread safe and should not be called from different threads.
  */
-public class HttpConnection extends CrtResource implements Closeable {
+public class HttpConnection extends CrtResource {
     private static final String HTTP = "http";
     private static final String HTTPS = "https";
     private static final Charset UTF8 = StandardCharsets.UTF_8;
@@ -62,92 +59,6 @@ public class HttpConnection extends CrtResource implements Closeable {
 
     public enum ConnectionState {
         DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING,
-    }
-
-    /**
-     * Receives calls from Native code and translates native data to/from Java Objects
-     */
-    private class JniHttpCallbackHandler {
-        private final HttpRequest request;
-        private final AsyncHttpResponseHandler responseHandler;
-
-        private JniHttpCallbackHandler(HttpRequest request, AsyncHttpResponseHandler responseHandler) {
-            this.request = request;
-            this.responseHandler = responseHandler;
-        }
-
-        /**
-         * Called from Native when new Http Headers have been received.
-         * Note that this function may be called multiple times as HTTP headers are received.
-         * @param responseStatusCode The HTTP Response Status Code
-         * @param nextHeaders The headers received in the latest IO event.
-         */
-        void onHeaders(int responseStatusCode, HttpHeader[] nextHeaders){
-//            System.err.println("JniHttpCallbackHandler.onHeaders()");
-            responseHandler.receiveHeaders(responseStatusCode, nextHeaders);
-        }
-
-        /**
-         * Called from Native once all HTTP Headers are processed.
-         * @param hasBody True if the HTTP Response had a Body, false otherwise.
-         */
-        void onHeadersDone(boolean hasBody){
-//            System.err.println("JniHttpCallbackHandler.onHeadersDone()");
-            responseHandler.receiveHeadersDone(hasBody);
-        }
-
-        /**
-         * Called when new Body bytes have been received.
-         * Note that this function may be called multiple times as headers are received.
-         * Do not keep a reference of the ByteBuffer after this method returns.
-         * @param bodyBytesIn The HTTP Body Bytes received in the last IO Event.
-         * @return The new IO Window Size
-         */
-        void onResponseBody(ByteBuffer bodyBytesIn){
-//            System.err.println("JniHttpCallbackHandler.onResponseBody()");
-            responseHandler.receiveResponseBody(bodyBytesIn);
-        }
-
-
-        /**
-         * Called from Native when the ResponseBody has completed.
-         * If successful, errorCode will be 0, otherwise the error String can be retrieved by calling
-         * CRT.awsErrorString(errorCode);
-         * @param errorCode The AWS CommonRuntime errorCode of the Response. Will be 0 if no error.
-         */
-        void onResponseComplete(int errorCode) {
-//            System.err.println("JniHttpCallbackHandler.onResponseComplete(): err_code: " + errorCode);
-            responseHandler.receiveResponseBodyComplete(errorCode);
-        }
-
-        /**
-         * Called from Native when the Http Request has a Body (Eg PUT/POST requests).
-         * Do not keep a reference of the ByteBuffer after this method returns.
-         * @param bodyBytesOut The Buffer to write the Body Bytes to.
-         * @return True if body stream is finished, false otherwise.
-         */
-        boolean sendOutgoingBody(ByteBuffer bodyBytesOut) throws IOException {
-//            System.err.println("JniHttpCallbackHandler.sendOutgoingBody()");
-            boolean haveBody = request.getBody().isPresent();
-            if (!haveBody) {
-                return true;
-            }
-
-            InputStream bodyStream = request.getBody().get();
-            int old_position = bodyBytesOut.position();
-
-            // TODO: This is a Blocking read. Ideally this would be non-blocking.
-            int amt_read = bodyStream.read(bodyBytesOut.array(), bodyBytesOut.position(), bodyBytesOut.remaining());
-
-            if (amt_read <= 0) {
-                return true;
-            }
-
-            bodyBytesOut.position(old_position + amt_read);
-
-            return false;
-
-        }
     }
 
     /**
@@ -294,8 +205,7 @@ public class HttpConnection extends CrtResource implements Closeable {
         return future;
     }
 
-    public void executeRequest(HttpRequest request, AsyncHttpResponseHandler responseHandler) throws CrtRuntimeException {
-
+    public CompletableFuture<HttpResponse> executeRequest(HttpRequest request) throws IOException, CrtRuntimeException {
         if (this.isNull()) {
             throw new HttpException("Invalid connection during executeRequest");
         }
@@ -313,11 +223,16 @@ public class HttpConnection extends CrtResource implements Closeable {
         System.err.println("Method: " + request.getMethod());
         System.err.println("Path: " + request.getEncodedPath());
         System.err.println("Headers: " + Arrays.toString(headers));
+
+        CompletableFuture<HttpResponse> future = new CompletableFuture<>();
+
         httpConnectionExecuteRequest(native_ptr(),
                 request.getMethod(),
                 request.getEncodedPath(),
                 headers,
-                new JniHttpCallbackHandler(request, responseHandler));
+                new JniHttpCallbackHandler(request, future));
+
+        return future;
     }
 
 
