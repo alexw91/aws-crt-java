@@ -18,7 +18,9 @@ package software.amazon.awssdk.crt.http;
 import software.amazon.awssdk.crt.CrtResource;
 
 /**
- * An HttpStream represents a Request/Response pair, and wraps the native resource from the aws-c-http library.
+ * An HttpStream represents a single Http Request/Response pair, and wraps the native resource from the aws-c-http library.
+ *
+ * Can be used to update the Window size, or to abort the stream early in case of errors.
  */
 public class HttpStream extends CrtResource {
 

@@ -28,7 +28,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 import static software.amazon.awssdk.crt.CRT.AWS_CRT_SUCCESS;
 
@@ -205,7 +204,7 @@ public class HttpConnection extends CrtResource {
         return future;
     }
 
-    public CompletableFuture<HttpResponse> executeRequest(HttpRequest request) throws IOException, CrtRuntimeException {
+    public void executeRequest(HttpRequest request, JniHttpCallbackHandler respHandler) throws IOException, CrtRuntimeException {
         if (this.isNull()) {
             throw new HttpException("Invalid connection during executeRequest");
         }
@@ -224,15 +223,11 @@ public class HttpConnection extends CrtResource {
         System.err.println("Path: " + request.getEncodedPath());
         System.err.println("Headers: " + Arrays.toString(headers));
 
-        CompletableFuture<HttpResponse> future = new CompletableFuture<>();
-
         httpConnectionExecuteRequest(native_ptr(),
                 request.getMethod(),
                 request.getEncodedPath(),
                 headers,
-                new JniHttpCallbackHandler(request, future));
-
-        return future;
+                respHandler);
     }
 
 
