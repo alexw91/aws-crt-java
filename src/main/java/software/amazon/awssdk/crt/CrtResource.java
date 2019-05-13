@@ -102,8 +102,11 @@ public class CrtResource implements AutoCloseable {
         }
 
         while(ownedSubResources.size() > 0) {
+            System.out.println("Releasing Next SubResource...");
             CrtResource r = ownedSubResources.pop();
+            System.out.println("Next SubResource: " + r.getClass().getCanonicalName());
             r.close();
+            System.out.println("SubResource Closed");
         }
     }
 }

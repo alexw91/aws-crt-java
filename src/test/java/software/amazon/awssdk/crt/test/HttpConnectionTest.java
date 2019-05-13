@@ -18,57 +18,50 @@ package software.amazon.awssdk.crt.test;
 import org.junit.Assert;
 import org.junit.Test;
 import software.amazon.awssdk.crt.CrtResource;
+import software.amazon.awssdk.crt.CrtRuntimeException;
 import software.amazon.awssdk.crt.http.HttpConnection;
-import software.amazon.awssdk.crt.http.HttpConnectionEvents;
 
 import java.net.URI;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static software.amazon.awssdk.crt.CRT.AWS_CRT_SUCCESS;
 
 public class HttpConnectionTest {
 
-    protected void testConnection(URI uri, boolean expectConnected, String exceptionMsg) {
+    protected void testConnection(URI uri, boolean expectConnected, String exceptionMsg) throws CrtRuntimeException {
+        System.out.println("Testing: " + uri);
+        Assert.assertEquals(String.join(", ", CrtResource.getAllocatedNativeResources()), 0, CrtResource.getAllocatedNativeResourceCount());
+
         boolean actuallyConnected = false;
         boolean exceptionThrown = false;
 
-        final AtomicBoolean connCompleteCalled = new AtomicBoolean(false);
-        final AtomicBoolean connShutdownCalled = new AtomicBoolean(false);
+        HttpConnection conn = null;
 
-        HttpConnectionEvents notifications = new HttpConnectionEvents() {
-            @Override
-            public void onConnectionComplete(int errorCode) {
-                if (errorCode == AWS_CRT_SUCCESS) {
-                    connCompleteCalled.set(true);
-                }
-            }
-
-            @Override
-            public void onConnectionShutdown(int errorCode) {
-                if (errorCode == AWS_CRT_SUCCESS) {
-                    connShutdownCalled.set(true);
-                }
-            }
-        };
-
-        try (HttpConnection conn = new HttpConnection(uri, notifications)){
-            Assert.assertEquals(false, connCompleteCalled.get());
-            Assert.assertEquals(false, connShutdownCalled.get());
-            actuallyConnected = conn.connect().get();
-
-            Assert.assertEquals(true, connCompleteCalled.get());
-
+        try {
+            System.out.println("Awaiting Connection...");
+            conn = HttpConnection.createConnection(uri).get();
+            System.out.println("Connection Complete");
+            actuallyConnected = true;
+            Assert.assertEquals(expectConnected, actuallyConnected);
+            System.out.println("Awaiting Shutdown...");
             conn.shutdown().get();
-            Assert.assertEquals(true, connShutdownCalled.get());
-
+            System.out.println("Shutdown Complete");
         } catch (Exception e) {
+            System.out.println("Conn Failed!");
             exceptionThrown = true;
             Assert.assertTrue(e.getMessage(), e.getMessage().contains(exceptionMsg));
+        } finally {
+            if (conn != null) {
+                System.out.println("Closing Conn...");
+                conn.close();
+                System.out.println("Conn Closed");
+            }
         }
 
         Assert.assertEquals("URI: " + uri.toString(), expectConnected, actuallyConnected);
         Assert.assertEquals("URI: " + uri.toString(), expectConnected, !exceptionThrown);
-        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
+        Assert.assertEquals(String.join(", ", CrtResource.getAllocatedNativeResources()), 0, CrtResource.getAllocatedNativeResourceCount());
     }
 
     @Test

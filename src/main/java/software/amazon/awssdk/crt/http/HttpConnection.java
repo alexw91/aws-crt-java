@@ -47,21 +47,28 @@ public class HttpConnection extends CrtResource {
     private final URI uri;
     private final int port;
     private final boolean useTls;
-    private final HttpConnectionEvents userConnectionCallbacks;
 
-    private final CompletableFuture<Boolean> connectedFuture;
+    private final CompletableFuture<HttpConnection> connectedFuture;
     private final CompletableFuture<Void> shutdownFuture;
-    private AsyncCallback connectAck;
-    private AsyncCallback shutdownAck;
+
+    public static CompletableFuture<HttpConnection> createConnection(URI uri) throws CrtRuntimeException {
+        HttpConnection conn = new HttpConnection(uri);
+        return conn.connect();
+    }
+
+    public static CompletableFuture<HttpConnection> createConnection(URI uri, ClientBootstrap bootstrap,
+                                                                     SocketOptions socketOptions, TlsContext tlsContext) throws CrtRuntimeException {
+        HttpConnection conn = new HttpConnection(uri, bootstrap, socketOptions, tlsContext);
+        return conn.connect();
+    }
 
     /**
      * Constructs a new HttpConnection.
      * @param uri Must be non-null and contain a hostname
-     * @param callbacks The Callbacks to call on Connection Complete and Shutdown
      * @throws CrtRuntimeException If unable to create SubResources
      */
-    public HttpConnection(URI uri, HttpConnectionEvents callbacks) throws CrtRuntimeException {
-        this(uri, new ClientBootstrap(1), new SocketOptions(), new TlsContext(), callbacks);
+    private HttpConnection(URI uri) throws CrtRuntimeException {
+        this(uri, new ClientBootstrap(1), new SocketOptions(), new TlsContext());
         own(this.clientBootstrap);
         own(this.socketOptions);
         own(this.tlsContext);
@@ -70,11 +77,9 @@ public class HttpConnection extends CrtResource {
     /**
      * Constructs a new HttpConnection.
      * @param uri Must be non-null and contain a hostname
-     * @param callbacks Optional handler for connection interruptions/resumptions
      * @throws HttpException If httpClient is null
      */
-    public HttpConnection(URI uri, ClientBootstrap bootstrap, SocketOptions socketOptions, TlsContext tlsContext,
-                          HttpConnectionEvents callbacks) {
+    private HttpConnection(URI uri, ClientBootstrap bootstrap, SocketOptions socketOptions, TlsContext tlsContext) {
         if (uri == null) {  throw new IllegalArgumentException("URI must not be null"); }
         if (uri.getScheme() == null) { throw new IllegalArgumentException("URI does not have a Scheme"); }
         if (!HTTP.equals(uri.getScheme()) && !HTTPS.equals(uri.getScheme())) { throw new IllegalArgumentException("URI has unknown Scheme"); }
@@ -101,17 +106,15 @@ public class HttpConnection extends CrtResource {
         this.clientBootstrap = bootstrap;
         this.socketOptions = socketOptions;
         this.tlsContext = tlsContext;
-        this.userConnectionCallbacks = callbacks;
         this.connectedFuture = new CompletableFuture<>();
         this.shutdownFuture = new CompletableFuture<>();
-        this.connectAck = AsyncCallback.wrapFuture(connectedFuture, false);
     }
 
     /**
      * Connects to the Http Endpoint
      * @return Future indicating when
      */
-    public CompletableFuture<Boolean> connect() throws CrtRuntimeException {
+    private CompletableFuture<HttpConnection> connect() throws CrtRuntimeException {
         if (!isNull()) {
             return connectedFuture;
         }
@@ -127,49 +130,49 @@ public class HttpConnection extends CrtResource {
     }
 
     /**
-     * Disconnects if necessary, and frees native resources associated with this connection
+     * Shuts down Connection if necessary, and frees native resources associated with this connection
      */
     @Override
     public void close() {
         if (!isNull()) {
+            System.out.println("Releasing Connection...");
             httpConnectionRelease(release());
+            System.out.println("Connection Released");
         }
 
+        System.out.println("Releasing SubResources...");
         super.close();
+        System.out.println("SubResources Released");
     }
 
     /** Called from native when the connection is established the first time **/
     private void onConnectionComplete(int errorCode) {
-        if (userConnectionCallbacks != null) {
-            userConnectionCallbacks.onConnectionComplete(errorCode);
-        }
-
+        System.out.println("Native onConnectionComplete() : " + errorCode);
         if (errorCode == AWS_CRT_SUCCESS) {
-            if (connectAck != null) {
-                connectAck.onSuccess(true);
-                connectAck = null;
-            }
+            System.out.println("Completing connectedFuture...");
+            connectedFuture.complete(this);
+            System.out.println("Completed connectedFuture.");
         } else {
-            if (connectAck != null) {
-                connectAck.onFailure(new HttpException(errorCode));
-                connectAck = null;
-            }
+
+            System.out.println("Closing Ourself...");
+            /* The user can't close this object since they never got a reference to it through the CompletableFuture,
+                so we need to close ourself on Connection Error. */
+            this.close();
+            System.out.println("Closed Ourself...");
+
+            System.out.println("Exceptionally closing connectedFuture...");
+            connectedFuture.completeExceptionally(new HttpException(errorCode));
+            System.out.println("Exceptionally Closed connectedFuture.");
         }
     }
 
     /** Called from native when the connection is shutdown. **/
     private void onConnectionShutdown(int errorCode) {
-        if (userConnectionCallbacks != null) {
-            userConnectionCallbacks.onConnectionShutdown(errorCode);
-        }
-
-        if (shutdownAck != null) {
-            if (errorCode == AWS_CRT_SUCCESS) {
-                shutdownAck.onSuccess();
-            } else {
-                shutdownAck.onFailure(new HttpException(errorCode));
-            }
-            shutdownAck = null;
+        System.out.println("Native onConnectionShutdown() : " + errorCode);
+        if (errorCode == AWS_CRT_SUCCESS) {
+           shutdownFuture.complete(null);
+        } else {
+            shutdownFuture.completeExceptionally(new HttpException(errorCode));
         }
     }
 
@@ -181,7 +184,6 @@ public class HttpConnection extends CrtResource {
         if (isNull()) {
            return shutdownFuture;
         }
-        shutdownAck = AsyncCallback.wrapFuture(shutdownFuture, null);
         try {
             httpConnectionShutdown(native_ptr());
         } catch (CrtRuntimeException e) {
