@@ -80,10 +80,10 @@ public class HttpRequestResponseTest {
 
         if (amtToTransfer > 0) {
             try {
-                System.out.println("Transferring Data, amount: " + amtToTransfer);
+                System.err.println("Transferring Data, amount: " + amtToTransfer);
                 out.put(in.array(), in.arrayOffset() + in.position(), amtToTransfer);
                 in.position(in.position() + amtToTransfer);
-                System.out.println("Data Transferred.");
+                System.err.println("Data Transferred.");
             } catch (Exception e) {
                 e.printStackTrace();
                 throw new RuntimeException(e);
@@ -151,10 +151,10 @@ public class HttpRequestResponseTest {
 
                 @Override
                 public boolean sendRequestBody(HttpStream stream, ByteBuffer bodyBytesOut) {
-                    System.out.println("Entered Java Callback");
+                    System.err.println("Entered Java Callback");
                     transferData(bodyBytesIn, bodyBytesOut);
 
-                    System.out.println("Exiting Java Callback");
+                    System.err.println("Exiting Java Callback");
                     return bodyBytesIn.remaining() == 0;
                 }
             };
