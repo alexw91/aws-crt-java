@@ -152,8 +152,19 @@ public class HttpRequestResponseTest {
 
                 @Override
                 public boolean sendRequestBody(HttpStream stream, ByteBuffer bodyBytesOut) {
-                    System.err.println("Entered Java Callback");
+                    System.err.println("\nEntered Java Callback");
+
                     transferData(bodyBytesIn, bodyBytesOut);
+
+                    System.err.println("bodyBytesOut.position()= " + bodyBytesOut.position());
+                    System.err.println("bodyBytesOut.limit()= " + bodyBytesOut.limit());
+                    System.err.println("bodyBytesOut.capacity()= " + bodyBytesOut.capacity());
+                    System.err.println("bodyBytesOut.remaining()= " + bodyBytesOut.remaining());
+
+                    System.err.println("bodyBytesIn.position()= " + bodyBytesIn.position());
+                    System.err.println("bodyBytesIn.limit()= " + bodyBytesIn.limit());
+                    System.err.println("bodyBytesIn.capacity()= " + bodyBytesIn.capacity());
+                    System.err.println("bodyBytesIn.remaining()= " + bodyBytesIn.remaining());
 
                     System.err.println("Exiting Java Callback");
                     return bodyBytesIn.remaining() == 0;
