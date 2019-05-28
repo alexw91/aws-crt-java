@@ -88,6 +88,7 @@ void s_cache_java_byte_buffer(JNIEnv *env) {
 
 jbyteArray aws_java_byte_array_new(JNIEnv *env, size_t size) {
     jbyteArray jArray = (*env)->NewByteArray(env, (jsize)size);
+    assert(jArray);
     return jArray;
 }
 
@@ -101,6 +102,7 @@ void aws_copy_native_array_to_java_byte_array(JNIEnv *env, jbyteArray dst, uint8
 
 jobject aws_java_byte_array_to_java_byte_buffer(JNIEnv *env, jbyteArray jArray) {
     jobject jByteBuffer = (*env)->CallStaticObjectMethod(env, s_java_byte_buffer.cls, s_java_byte_buffer.wrap, jArray);
+    assert(jByteBuffer);
     return jByteBuffer;
 }
 

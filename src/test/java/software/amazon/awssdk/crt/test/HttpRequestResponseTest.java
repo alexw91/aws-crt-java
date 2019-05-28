@@ -79,8 +79,13 @@ public class HttpRequestResponseTest {
         int amtToTransfer = Math.min(in.remaining(), out.remaining());
 
         if (amtToTransfer > 0) {
-            out.put(in.array(), in.arrayOffset() + in.position(), amtToTransfer);
-            in.position(in.position() + amtToTransfer);
+            try {
+                out.put(in.array(), in.arrayOffset() + in.position(), amtToTransfer);
+                in.position(in.position() + amtToTransfer);
+            } catch (Exception e) {
+                e.printStackTrace();
+                throw new RuntimeException(e);
+            }
         }
     }
 
