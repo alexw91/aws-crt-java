@@ -336,17 +336,21 @@ enum aws_http_outgoing_body_state s_stream_outgoing_body_fn(
     uint8_t *out = &(dst->buffer[dst->len]);
     size_t out_remaining = dst->capacity - dst->len;
 
+    fprintf(stdout, "\nAllocating Java byte[] with size: %zu...\n", out_remaining);
     jbyteArray jByteArray = aws_java_byte_array_new(env, out_remaining);
     jobject jByteBuffer = aws_java_byte_array_to_java_byte_buffer(env, jByteArray);
 
     jByteBuffer = (*env)->NewGlobalRef(env, jByteBuffer);
 
+    fprintf(stdout, "Calling Java Callback...\n");
     jboolean isDone = (*env)->CallBooleanMethod(
         env,
         callback->java_crt_http_callback_handler,
         s_crt_http_stream_handler.sendOutgoingBody,
         callback->java_http_stream,
         jByteBuffer);
+
+    fprintf(stdout, "Java Callback returned.\n");
 
     if ((*env)->ExceptionCheck(env)) {
         // Close the Connection if the Java Callback throws an Exception
