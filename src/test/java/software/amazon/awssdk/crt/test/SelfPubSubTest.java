@@ -46,51 +46,51 @@ public class SelfPubSubTest extends MqttConnectionFixture {
     int pubsAcked = 0;
     int subsAcked = 0;
 
-    @Test
-    public void testPubSub() {
-        connect();
-
-        try {
-            Consumer<MqttMessage> messageHandler = (message) -> {
-                ByteBuffer payload = message.getPayload();
-                assertTrue("Payload buffer is array of bytes", payload.hasArray());
-                try {
-                    String contents = new String(payload.array(), "UTF-8");
-                    assertEquals("Message is intact", TEST_PAYLOAD, contents);
-                } catch (UnsupportedEncodingException ex) {
-                    fail("Unable to decode payload: " + ex.getMessage());
-                }
-            };
-
-            CompletableFuture<Integer> subscribed = connection.subscribe(TEST_TOPIC, QualityOfService.AT_LEAST_ONCE, messageHandler);
-            subscribed.thenApply(unused -> subsAcked++);
-            int packetId = subscribed.get();
-
-            assertNotSame(0, packetId);
-            assertEquals("Single subscription", 1, subsAcked);
-
-            ByteBuffer payload = ByteBuffer.allocateDirect(TEST_PAYLOAD.length());
-            payload.put(TEST_PAYLOAD.getBytes());
-            MqttMessage message = new MqttMessage(TEST_TOPIC, payload);
-            CompletableFuture<Integer> published = connection.publish(message, QualityOfService.AT_LEAST_ONCE, false);
-            published.thenApply(unused -> pubsAcked++);
-            packetId = published.get();
-
-            assertNotSame(0, packetId);
-            assertEquals("Published", 1, pubsAcked);
-
-            CompletableFuture<Integer> unsubscribed = connection.unsubscribe(TEST_TOPIC);
-            unsubscribed.thenApply(unused -> subsAcked--);
-            packetId = unsubscribed.get();
-
-            assertNotSame(0, packetId);
-            assertEquals("No Subscriptions", 0, subsAcked);
-        } catch (Exception ex) {
-            fail(ex.getMessage());
-        }
-
-        disconnect();
-        close();
-        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
-    }
+//    @Test
+//    public void testPubSub() {
+//        connect();
+//
+//        try {
+//            Consumer<MqttMessage> messageHandler = (message) -> {
+//                ByteBuffer payload = message.getPayload();
+//                assertTrue("Payload buffer is array of bytes", payload.hasArray());
+//                try {
+//                    String contents = new String(payload.array(), "UTF-8");
+//                    assertEquals("Message is intact", TEST_PAYLOAD, contents);
+//                } catch (UnsupportedEncodingException ex) {
+//                    fail("Unable to decode payload: " + ex.getMessage());
+//                }
+//            };
+//
+//            CompletableFuture<Integer> subscribed = connection.subscribe(TEST_TOPIC, QualityOfService.AT_LEAST_ONCE, messageHandler);
+//            subscribed.thenApply(unused -> subsAcked++);
+//            int packetId = subscribed.get();
+//
+//            assertNotSame(0, packetId);
+//            assertEquals("Single subscription", 1, subsAcked);
+//
+//            ByteBuffer payload = ByteBuffer.allocateDirect(TEST_PAYLOAD.length());
+//            payload.put(TEST_PAYLOAD.getBytes());
+//            MqttMessage message = new MqttMessage(TEST_TOPIC, payload);
+//            CompletableFuture<Integer> published = connection.publish(message, QualityOfService.AT_LEAST_ONCE, false);
+//            published.thenApply(unused -> pubsAcked++);
+//            packetId = published.get();
+//
+//            assertNotSame(0, packetId);
+//            assertEquals("Published", 1, pubsAcked);
+//
+//            CompletableFuture<Integer> unsubscribed = connection.unsubscribe(TEST_TOPIC);
+//            unsubscribed.thenApply(unused -> subsAcked--);
+//            packetId = unsubscribed.get();
+//
+//            assertNotSame(0, packetId);
+//            assertEquals("No Subscriptions", 0, subsAcked);
+//        } catch (Exception ex) {
+//            fail(ex.getMessage());
+//        }
+//
+//        disconnect();
+//        close();
+//        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
+//    }
 };

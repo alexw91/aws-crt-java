@@ -330,7 +330,8 @@ enum aws_http_outgoing_body_state s_stream_outgoing_body_fn(
     struct aws_byte_buf *dst,
     void *user_data) {
 
-    fprintf(stderr, "\nEntered Native Callback...\n");
+    AWS_LOGF_TRACE(AWS_LS_HTTP_CONNECTION, "Entered Native Callback...");
+
 
     struct http_stream_callback_data *callback = (struct http_stream_callback_data *)user_data;
     JNIEnv *env = aws_jni_get_thread_env(callback->connection->jvm);
@@ -338,13 +339,15 @@ enum aws_http_outgoing_body_state s_stream_outgoing_body_fn(
     uint8_t *out = &(dst->buffer[dst->len]);
     size_t out_remaining = dst->capacity - dst->len;
 
-    fprintf(stderr, "Allocating Java byte[] with size: %zu...\n", out_remaining);
+    assert(dst->capacity > dst->len);
+    AWS_LOGF_TRACE(AWS_LS_HTTP_CONNECTION, "dst.len=%zu, dst.capacity=%zu\n", dst->len, dst->capacity);
+    AWS_LOGF_TRACE(AWS_LS_HTTP_CONNECTION, "Allocating Java byte[] with size: %zu...\n", out_remaining);
     jbyteArray jByteArray = aws_java_byte_array_new(env, out_remaining);
     jobject jByteBuffer = aws_java_byte_array_to_java_byte_buffer(env, jByteArray);
 
     jByteBuffer = (*env)->NewGlobalRef(env, jByteBuffer);
 
-    fprintf(stderr, "Calling Java Callback...\n");
+    AWS_LOGF_TRACE(AWS_LS_HTTP_CONNECTION, "Calling Java Callback...");
     jboolean isDone = (*env)->CallBooleanMethod(
         env,
         callback->java_crt_http_callback_handler,
@@ -352,11 +355,12 @@ enum aws_http_outgoing_body_state s_stream_outgoing_body_fn(
         callback->java_http_stream,
         jByteBuffer);
 
-    fprintf(stderr, "Java Callback returned.\n");
+    AWS_LOGF_TRACE(AWS_LS_HTTP_CONNECTION, "Java Callback returned.");
 
     if ((*env)->ExceptionCheck(env)) {
         // Close the Connection if the Java Callback throws an Exception
-        fprintf(stderr, "Native Callback detected Exception.\n");
+        AWS_LOGF_TRACE(AWS_LS_HTTP_CONNECTION, "Native Callback detected Exception.");
+        (*env)->DeleteGlobalRef(env, jByteBuffer);
         aws_http_connection_close(aws_http_stream_get_connection(stream));
         return AWS_HTTP_OUTGOING_BODY_IN_PROGRESS;
     }
@@ -364,12 +368,13 @@ enum aws_http_outgoing_body_state s_stream_outgoing_body_fn(
     int amt_written = aws_jni_byte_buffer_get_position(env, jByteBuffer);
     assert(amt_written <= out_remaining);
 
+    AWS_LOGF_TRACE(AWS_LS_HTTP_CONNECTION, "amt_written=%d, out_remaining=%zu, isDone=%d", amt_written, out_remaining, (int)isDone);
     aws_copy_java_byte_array_to_native_array(env, jByteArray, out, amt_written);
     dst->len += amt_written;
 
     (*env)->DeleteGlobalRef(env, jByteBuffer);
 
-    fprintf(stderr, "Native Callback returning\n");
+    AWS_LOGF_TRACE(AWS_LS_HTTP_CONNECTION, "Native Callback returning.");
     if (isDone) {
         return AWS_HTTP_OUTGOING_BODY_DONE;
     }

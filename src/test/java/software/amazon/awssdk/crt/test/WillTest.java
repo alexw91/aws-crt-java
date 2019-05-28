@@ -39,21 +39,21 @@ public class WillTest extends MqttConnectionFixture {
     static final String TEST_TOPIC = "/i/am/ded";
     static final String TEST_WILL = "i am ghost nao";
 
-    @Test
-    public void testWill() {
-        connect();
-
-        try {
-            ByteBuffer payload = ByteBuffer.allocateDirect(TEST_WILL.length());
-            payload.put(TEST_WILL.getBytes());
-            MqttMessage will = new MqttMessage(TEST_TOPIC, payload);
-            connection.setWill(will, QualityOfService.AT_LEAST_ONCE, false);
-        } catch (MqttException ex) {
-            fail("Exception while setting will: " + ex.toString());
-        }
-
-        disconnect();
-        close();
-        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
-    }
+//    @Test
+//    public void testWill() {
+//        connect();
+//
+//        try {
+//            ByteBuffer payload = ByteBuffer.allocateDirect(TEST_WILL.length());
+//            payload.put(TEST_WILL.getBytes());
+//            MqttMessage will = new MqttMessage(TEST_TOPIC, payload);
+//            connection.setWill(will, QualityOfService.AT_LEAST_ONCE, false);
+//        } catch (MqttException ex) {
+//            fail("Exception while setting will: " + ex.toString());
+//        }
+//
+//        disconnect();
+//        close();
+//        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
+//    }
 };

@@ -157,11 +157,13 @@ public class HttpRequestResponseTest {
                     transferData(bodyBytesIn, bodyBytesOut);
 
                     System.err.println("bodyBytesOut.position()= " + bodyBytesOut.position());
+                    System.err.println("bodyBytesOut.arrayOffset()= " + bodyBytesOut.arrayOffset());
                     System.err.println("bodyBytesOut.limit()= " + bodyBytesOut.limit());
                     System.err.println("bodyBytesOut.capacity()= " + bodyBytesOut.capacity());
                     System.err.println("bodyBytesOut.remaining()= " + bodyBytesOut.remaining());
 
                     System.err.println("bodyBytesIn.position()= " + bodyBytesIn.position());
+                    System.err.println("bodyBytesIn.arrayOffset()= " + bodyBytesIn.arrayOffset());
                     System.err.println("bodyBytesIn.limit()= " + bodyBytesIn.limit());
                     System.err.println("bodyBytesIn.capacity()= " + bodyBytesIn.capacity());
                     System.err.println("bodyBytesIn.remaining()= " + bodyBytesIn.remaining());
@@ -225,46 +227,46 @@ public class HttpRequestResponseTest {
 
         return response;
     }
-
-    @Test
-    public void testHttpDelete() throws Exception {
-        testRequest("DELETE", "https://httpbin.org", "/delete", EMPTY_BODY, 200);
-        testRequest("DELETE", "https://httpbin.org", "/get", EMPTY_BODY, 405);
-        testRequest("DELETE", "https://httpbin.org", "/post", EMPTY_BODY, 405);
-        testRequest("DELETE", "https://httpbin.org", "/put", EMPTY_BODY, 405);
-    }
-
-    @Test
-    public void testHttpGet() throws Exception {
-        testRequest("GET", "https://httpbin.org", "/delete", EMPTY_BODY, 405);
-        testRequest("GET", "https://httpbin.org", "/get", EMPTY_BODY, 200);
-        testRequest("GET", "https://httpbin.org", "/post", EMPTY_BODY, 405);
-        testRequest("GET", "https://httpbin.org", "/put", EMPTY_BODY, 405);
-    }
-
-    @Test
-    public void testHttpPost() throws Exception {
-        testRequest("POST", "https://httpbin.org", "/delete", EMPTY_BODY, 405);
-        testRequest("POST", "https://httpbin.org", "/get", EMPTY_BODY, 405);
-        testRequest("POST", "https://httpbin.org", "/post", EMPTY_BODY, 200);
-        testRequest("POST", "https://httpbin.org", "/put", EMPTY_BODY, 405);
-    }
-
-    @Test
-    public void testHttpPut() throws Exception {
-        testRequest("PUT", "https://httpbin.org", "/delete", EMPTY_BODY, 405);
-        testRequest("PUT", "https://httpbin.org", "/get", EMPTY_BODY, 405);
-        testRequest("PUT", "https://httpbin.org", "/post", EMPTY_BODY, 405);
-        testRequest("PUT", "https://httpbin.org", "/put", EMPTY_BODY, 200);
-    }
-
-    @Test
-    public void testHttpResponseStatusCodes() throws Exception {
-        testRequest("GET", "https://httpbin.org", "/status/200", EMPTY_BODY, 200);
-        testRequest("GET", "https://httpbin.org", "/status/300", EMPTY_BODY, 300);
-        testRequest("GET", "https://httpbin.org", "/status/400", EMPTY_BODY, 400);
-        testRequest("GET", "https://httpbin.org", "/status/500", EMPTY_BODY, 500);
-    }
+//
+//    @Test
+//    public void testHttpDelete() throws Exception {
+//        testRequest("DELETE", "https://httpbin.org", "/delete", EMPTY_BODY, 200);
+//        testRequest("DELETE", "https://httpbin.org", "/get", EMPTY_BODY, 405);
+//        testRequest("DELETE", "https://httpbin.org", "/post", EMPTY_BODY, 405);
+//        testRequest("DELETE", "https://httpbin.org", "/put", EMPTY_BODY, 405);
+//    }
+//
+//    @Test
+//    public void testHttpGet() throws Exception {
+//        testRequest("GET", "https://httpbin.org", "/delete", EMPTY_BODY, 405);
+//        testRequest("GET", "https://httpbin.org", "/get", EMPTY_BODY, 200);
+//        testRequest("GET", "https://httpbin.org", "/post", EMPTY_BODY, 405);
+//        testRequest("GET", "https://httpbin.org", "/put", EMPTY_BODY, 405);
+//    }
+//
+//    @Test
+//    public void testHttpPost() throws Exception {
+//        testRequest("POST", "https://httpbin.org", "/delete", EMPTY_BODY, 405);
+//        testRequest("POST", "https://httpbin.org", "/get", EMPTY_BODY, 405);
+//        testRequest("POST", "https://httpbin.org", "/post", EMPTY_BODY, 200);
+//        testRequest("POST", "https://httpbin.org", "/put", EMPTY_BODY, 405);
+//    }
+//
+//    @Test
+//    public void testHttpPut() throws Exception {
+//        testRequest("PUT", "https://httpbin.org", "/delete", EMPTY_BODY, 405);
+//        testRequest("PUT", "https://httpbin.org", "/get", EMPTY_BODY, 405);
+//        testRequest("PUT", "https://httpbin.org", "/post", EMPTY_BODY, 405);
+//        testRequest("PUT", "https://httpbin.org", "/put", EMPTY_BODY, 200);
+//    }
+//
+//    @Test
+//    public void testHttpResponseStatusCodes() throws Exception {
+//        testRequest("GET", "https://httpbin.org", "/status/200", EMPTY_BODY, 200);
+//        testRequest("GET", "https://httpbin.org", "/status/300", EMPTY_BODY, 300);
+//        testRequest("GET", "https://httpbin.org", "/status/400", EMPTY_BODY, 400);
+//        testRequest("GET", "https://httpbin.org", "/status/500", EMPTY_BODY, 500);
+//    }
 
     @Test
     public void testHttpDownload() throws Exception {

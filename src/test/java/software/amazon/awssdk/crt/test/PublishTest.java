@@ -39,25 +39,25 @@ public class PublishTest extends MqttConnectionFixture {
 
     int pubsAcked = 0;
 
-    @Test
-    public void testPublish() {
-        connect();
-        
-        try {
-            ByteBuffer payload = ByteBuffer.allocateDirect(TEST_PAYLOAD.length());
-            payload.put(TEST_PAYLOAD.getBytes());
-            MqttMessage message = new MqttMessage(TEST_TOPIC, payload);
-            CompletableFuture<Integer> published = connection.publish(message, QualityOfService.AT_LEAST_ONCE, false);
-            published.thenApply(packetId -> pubsAcked++);
-            published.get();
-
-            assertEquals("Published", 1, pubsAcked);
-        } catch (Exception ex) {
-            fail(ex.getMessage());
-        }
-
-        disconnect();
-        close();
-        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
-    }
+//    @Test
+//    public void testPublish() {
+//        connect();
+//
+//        try {
+//            ByteBuffer payload = ByteBuffer.allocateDirect(TEST_PAYLOAD.length());
+//            payload.put(TEST_PAYLOAD.getBytes());
+//            MqttMessage message = new MqttMessage(TEST_TOPIC, payload);
+//            CompletableFuture<Integer> published = connection.publish(message, QualityOfService.AT_LEAST_ONCE, false);
+//            published.thenApply(packetId -> pubsAcked++);
+//            published.get();
+//
+//            assertEquals("Published", 1, pubsAcked);
+//        } catch (Exception ex) {
+//            fail(ex.getMessage());
+//        }
+//
+//        disconnect();
+//        close();
+//        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
+//    }
 };

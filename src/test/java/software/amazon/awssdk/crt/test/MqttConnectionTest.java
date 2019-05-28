@@ -174,11 +174,11 @@ public class MqttConnectionTest extends MqttConnectionFixture {
     public MqttConnectionTest() {
     }
 
-    @Test
-    public void testConnectDisconnect() {
-        connect();
-        disconnect();
-        close();
-        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
-    }
+//    @Test
+//    public void testConnectDisconnect() {
+//        connect();
+//        disconnect();
+//        close();
+//        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
+//    }
 };

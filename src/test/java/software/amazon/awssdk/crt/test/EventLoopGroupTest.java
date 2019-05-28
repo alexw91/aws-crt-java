@@ -26,14 +26,14 @@ import software.amazon.awssdk.crt.io.EventLoopGroup;
 public class EventLoopGroupTest {
     public EventLoopGroupTest() {}
     
-    @Test
-    public void testCreateDestroy() {
-        try (EventLoopGroup elg = new EventLoopGroup(1)) {
-            assertNotNull(elg);
-            assertTrue(!elg.isNull());
-        } catch (CrtRuntimeException ex) {
-            fail(ex.getMessage());
-        }
-        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
-    }
+//    @Test
+//    public void testCreateDestroy() {
+//        try (EventLoopGroup elg = new EventLoopGroup(1)) {
+//            assertNotNull(elg);
+//            assertTrue(!elg.isNull());
+//        } catch (CrtRuntimeException ex) {
+//            fail(ex.getMessage());
+//        }
+//        Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
+//    }
 };

@@ -55,16 +55,16 @@ public class HttpConnectionTest {
         Assert.assertEquals(0, CrtResource.getAllocatedNativeResourceCount());
     }
 
-    @Test
-    public void testHttpConnection() throws Exception {
-        testConnection(new URI("https://aws-crt-test-stuff.s3.amazonaws.com"), true, null);
-        testConnection(new URI("http://aws-crt-test-stuff.s3.amazonaws.com"), true, null);
-        testConnection(new URI("http://aws-crt-test-stuff.s3.amazonaws.com:80"), true, null);
-        testConnection(new URI("http://aws-crt-test-stuff.s3.amazonaws.com:443"), true, null);
-        testConnection(new URI("https://aws-crt-test-stuff.s3.amazonaws.com:443"), true, null);
-        testConnection(new URI("https://rsa2048.badssl.com/"), true, null);
-        testConnection(new URI("http://http.badssl.com/"), true, null);
-        testConnection(new URI("https://expired.badssl.com/"), false, "TLS (SSL) negotiation failed");
-        testConnection(new URI("https://self-signed.badssl.com/"), false, "TLS (SSL) negotiation failed");
-    }
+//    @Test
+//    public void testHttpConnection() throws Exception {
+//        testConnection(new URI("https://aws-crt-test-stuff.s3.amazonaws.com"), true, null);
+//        testConnection(new URI("http://aws-crt-test-stuff.s3.amazonaws.com"), true, null);
+//        testConnection(new URI("http://aws-crt-test-stuff.s3.amazonaws.com:80"), true, null);
+//        testConnection(new URI("http://aws-crt-test-stuff.s3.amazonaws.com:443"), true, null);
+//        testConnection(new URI("https://aws-crt-test-stuff.s3.amazonaws.com:443"), true, null);
+//        testConnection(new URI("https://rsa2048.badssl.com/"), true, null);
+//        testConnection(new URI("http://http.badssl.com/"), true, null);
+//        testConnection(new URI("https://expired.badssl.com/"), false, "TLS (SSL) negotiation failed");
+//        testConnection(new URI("https://self-signed.badssl.com/"), false, "TLS (SSL) negotiation failed");
+//    }
 }
