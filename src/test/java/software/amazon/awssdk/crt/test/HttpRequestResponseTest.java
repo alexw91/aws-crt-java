@@ -111,6 +111,7 @@ public class HttpRequestResponseTest {
         SocketOptions sockOpts = new SocketOptions();
         TlsContext tlsContext =  new TlsContext();
 
+        Assert.assertNotNull(reqBody);
         final ByteBuffer bodyBytesIn = ByteBuffer.wrap(reqBody.getBytes(UTF8));
         final CompletableFuture<Void> reqCompleted = new CompletableFuture<>();
 

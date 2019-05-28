@@ -156,6 +156,8 @@ jobject aws_jni_direct_byte_buffer_from_byte_buf(JNIEnv *env, const struct aws_b
  * Returns the read/write position of a Java ByteBuffer
  */
 int aws_jni_byte_buffer_get_position(JNIEnv *env, jobject java_byte_buffer) {
+    assert(s_java_byte_buffer.get_position);
+    assert(java_byte_buffer);
     jint position = (*env)->CallIntMethod(env, java_byte_buffer, s_java_byte_buffer.get_position);
     return (int)position;
 }
