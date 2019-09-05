@@ -15,6 +15,7 @@
 
 package software.amazon.awssdk.crt.http;
 
+import java.nio.ByteBuffer;
 import software.amazon.awssdk.crt.CrtResource;
 import software.amazon.awssdk.crt.CrtRuntimeException;
 
@@ -39,23 +40,18 @@ public class HttpConnection extends CrtResource {
      * Schedules an HttpRequest on the Native EventLoop for this HttpConnection.
      *
      * @param request The Request to make to the Server.
-     * @param reqOptions The Http Request Options
      * @param streamHandler The Stream Handler to be called from the Native EventLoop
      * @throws CrtRuntimeException
      * @return The HttpStream that represents this Request/Response Pair. It can be closed at any time during the
      *          request/response, but must be closed by the user thread making this request when it's done.
      */
-    public HttpStream makeRequest(HttpRequest request, HttpRequestOptions reqOptions, CrtHttpStreamHandler streamHandler) throws CrtRuntimeException {
+    public HttpStream makeRequest(HttpRequest request, CrtHttpStreamHandler streamHandler) throws CrtRuntimeException {
         if (isNull()) {
             throw new IllegalStateException("HttpConnection has been closed, can't make requests on it.");
         }
 
-        if (reqOptions.getBodyBufferSize() > manager.getWindowSize()) {
-            throw new IllegalArgumentException("Response Body Buffer can't be > than Window Size");
-        }
-
-        HttpStream stream = httpConnectionMakeRequest(native_ptr(),
-                reqOptions.getBodyBufferSize(),
+        HttpStream stream = httpConnectionMakeRequest(manager.native_ptr(),
+                native_ptr(),
                 request.getMethod(),
                 request.getEncodedPath(),
                 request.getHeaders(),
@@ -83,8 +79,8 @@ public class HttpConnection extends CrtResource {
     /*******************************************************************************
      * Native methods
      ******************************************************************************/
-    private static native HttpStream httpConnectionMakeRequest(long connection,
-                                                               int respBodyBufSize,
+    private static native HttpStream httpConnectionMakeRequest(long connectionManager,
+                                                               long connection,
                                                                String method,
                                                                String uri,
                                                                HttpHeader[] headers,

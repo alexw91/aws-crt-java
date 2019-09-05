@@ -26,7 +26,6 @@ import software.amazon.awssdk.crt.http.HttpConnection;
 import software.amazon.awssdk.crt.http.HttpConnectionPoolManager;
 import software.amazon.awssdk.crt.http.HttpHeader;
 import software.amazon.awssdk.crt.http.HttpRequest;
-import software.amazon.awssdk.crt.http.HttpRequestOptions;
 import software.amazon.awssdk.crt.http.HttpStream;
 import software.amazon.awssdk.crt.io.ClientBootstrap;
 import software.amazon.awssdk.crt.io.SocketOptions;
@@ -153,8 +152,7 @@ public class HttpRequestResponseTest {
                 }
             };
 
-            HttpRequestOptions reqOptions = new HttpRequestOptions();
-            stream = conn.makeRequest(request, reqOptions, streamHandler);
+            stream = conn.makeRequest(request, streamHandler);
             Assert.assertNotNull(stream);
             // Give the request up to 60 seconds to complete, otherwise throw a TimeoutException
             reqCompleted.get(60, TimeUnit.SECONDS);
@@ -178,11 +176,11 @@ public class HttpRequestResponseTest {
         }
 
         for (Integer respBodyUpdateSize: respBodyUpdateSizes) {
-            Assert.assertTrue("Incorrect Update Size", respBodyUpdateSize <= HttpRequestOptions.DEFAULT_BODY_BUFFER_SIZE);
+            Assert.assertTrue("Incorrect Update Size", respBodyUpdateSize <= HttpConnectionPoolManager.DEFAULT_MAX_BUFFER_SIZE);
         }
 
         for (Integer reqBodyUpdateSize: reqBodyUpdateSizes) {
-            Assert.assertTrue("Incorrect Update Size", reqBodyUpdateSize <= HttpRequestOptions.DEFAULT_BODY_BUFFER_SIZE);
+            Assert.assertTrue("Incorrect Update Size", reqBodyUpdateSize <=  HttpConnectionPoolManager.DEFAULT_MAX_BUFFER_SIZE);
         }
 
 

@@ -23,6 +23,8 @@
 #include <aws/io/logging.h>
 #include <aws/io/stream.h>
 
+#include "http_connection_manager.h"
+
 #if _MSC_VER
 #    pragma warning(disable : 4204) /* non-constant aggregate initializer */
 #endif
@@ -113,12 +115,12 @@ struct http_stream_callback_data {
     struct aws_input_stream native_outgoing_body;
     bool native_outgoing_body_done;
 
-    struct aws_byte_buf native_body_buf;
+    struct jni_conn_manager *jni_conn_manager;
+
     jobject java_crt_http_callback_handler;
     jobject java_http_stream;
 
-    /* Direct Byte Buffer that points to native_body_buf struct above*/
-    jobject java_body_buf;
+    struct jni_byte_buf_pair *buf_pair;
 };
 
 static int s_native_outgoing_body_read(struct aws_input_stream *input_stream, struct aws_byte_buf *dst);
@@ -129,10 +131,30 @@ struct aws_input_stream_vtable s_native_outgoing_body_vtable = {
     .get_status = s_native_outgoing_body_status,
 };
 
+static struct jni_byte_buf_pair *aws_http_conn_manager_pop_idle_buffer(struct jni_conn_manager *jni_conn_manager) {
+    aws_mutex_lock(&jni_conn_manager->rw_lock);
+
+    struct aws_linked_list_node *node = aws_linked_list_pop_front(&jni_conn_manager->idle_java_native_buf_pairs);
+    struct jni_byte_buf_pair *pair = AWS_CONTAINER_OF(node, struct jni_byte_buf_pair, list_handle);
+
+    aws_mutex_unlock(&jni_conn_manager->rw_lock);
+
+    return pair;
+}
+
+static void aws_http_conn_manager_push_idle_buffer(
+    struct jni_conn_manager *jni_conn_manager,
+    struct jni_byte_buf_pair *pair) {
+
+    aws_mutex_lock(&jni_conn_manager->rw_lock);
+    aws_linked_list_push_front(&jni_conn_manager->idle_java_native_buf_pairs, &pair->list_handle);
+    aws_mutex_unlock(&jni_conn_manager->rw_lock);
+}
+
 // If error occurs, A Java exception is thrown and NULL is returned.
 static struct http_stream_callback_data *http_stream_callback_alloc(
     JNIEnv *env,
-    jint body_buf_size,
+    struct jni_conn_manager *jni_conn_manager,
     jobject java_callback_handler) {
 
     struct aws_allocator *allocator = aws_jni_get_allocator();
@@ -160,40 +182,21 @@ static struct http_stream_callback_data *http_stream_callback_alloc(
 
     aws_http_message_set_body_stream(callback->native_request, &callback->native_outgoing_body);
 
-    /* Pre-allocate a Native buffer and Java Direct ByteBuffer so that we don't create a new Java Object for each IO
-     * operation. Otherwise, we'll create garbage faster than Java's GC can clean up. */
-    int result = aws_byte_buf_init(&callback->native_body_buf, allocator, (size_t)body_buf_size);
-    if (result != AWS_OP_SUCCESS) {
-        aws_jni_throw_runtime_exception(env, "HttpConnection.MakeRequest: failed");
-        goto failed_byte_buf_init;
-    }
-
-    /* Create a Java DirectByteBuffer that points to native_body_buf */
-    jobject java_body_buf = aws_jni_direct_byte_buffer_from_byte_buf(env, &callback->native_body_buf);
-    if (!java_body_buf) {
-        goto failed_java_body_buf_new;
-    }
-
-    /* Tell the JVM we have a reference to both the Java ByteBuffer and the callback handler (so they're not GC'd) */
-    callback->java_body_buf = (*env)->NewGlobalRef(env, java_body_buf);
-    if (!callback->java_body_buf) {
-        /* Local ref to java_body_buf is cleaned up automatically */
-        goto failed_java_body_buf_ref;
-    }
-
     callback->java_crt_http_callback_handler = (*env)->NewGlobalRef(env, java_callback_handler);
     if (!callback->java_crt_http_callback_handler) {
+        goto failed_callback_handler_ref;
+    }
+
+    callback->jni_conn_manager = jni_conn_manager;
+    callback->buf_pair = aws_http_conn_manager_pop_idle_buffer(jni_conn_manager);
+
+    if (!callback->buf_pair) {
         goto failed_callback_handler_ref;
     }
 
     return callback;
 
 failed_callback_handler_ref:
-    (*env)->DeleteGlobalRef(env, callback->java_body_buf);
-failed_java_body_buf_ref:
-failed_java_body_buf_new:
-    aws_byte_buf_clean_up(&callback->native_body_buf);
-failed_byte_buf_init:
     aws_http_message_destroy(callback->native_request);
 failed_request_new:
     aws_mutex_clean_up(&callback->setup_lock);
@@ -208,11 +211,12 @@ static void http_stream_callback_release(JNIEnv *env, struct http_stream_callbac
         s_java_http_stream_from_native_delete(env, callback->java_http_stream);
     }
 
+    /* Push our ByteBuffer back on the Idle queue so it can be reused for another stream in the ConnectionPool */
+    aws_http_conn_manager_push_idle_buffer(callback->jni_conn_manager, callback->buf_pair);
+
     // Mark our Callback Java Objects as eligible for Garbage Collection
-    (*env)->DeleteGlobalRef(env, callback->java_body_buf);
     (*env)->DeleteGlobalRef(env, callback->java_crt_http_callback_handler);
 
-    aws_byte_buf_clean_up(&callback->native_body_buf);
     aws_http_message_destroy(callback->native_request);
     aws_mutex_clean_up(&callback->setup_lock);
     aws_mem_release(aws_jni_get_allocator(), callback);
@@ -381,21 +385,21 @@ static int s_resp_body_publish_to_java(
     size_t *out_window_update_size) {
 
     // Return early if there's nothing to publish
-    if (callback->native_body_buf.len == 0) {
+    if (callback->buf_pair->native_buf.len == 0) {
         return AWS_OP_SUCCESS;
     }
 
     // Set read start position to zero
     JNIEnv *env = aws_jni_get_thread_env(callback->jvm);
-    aws_jni_byte_buffer_set_position(env, callback->java_body_buf, 0);
-    aws_jni_byte_buffer_set_limit(env, callback->java_body_buf, (jint)callback->native_body_buf.len);
+    aws_jni_byte_buffer_set_position(env, callback->buf_pair->java_buf, 0);
+    aws_jni_byte_buffer_set_limit(env, callback->buf_pair->java_buf, (jint)callback->buf_pair->native_buf.len);
 
     jint window_increment = (*env)->CallIntMethod(
         env,
         callback->java_crt_http_callback_handler,
         s_crt_http_stream_handler.onResponseBody,
         callback->java_http_stream,
-        callback->java_body_buf);
+        callback->buf_pair->java_buf);
 
     if ((*env)->ExceptionCheck(env)) {
         AWS_LOGF_ERROR(AWS_LS_HTTP_STREAM, "id=%p: Received Exception from onResponseBody", (void *)stream);
@@ -409,14 +413,14 @@ static int s_resp_body_publish_to_java(
 
     // We can check the ByteBuffer read position to verify that the user callback actually read all the data
     // they claimed to be able to read.
-    size_t read_position = aws_jni_byte_buffer_get_position(env, callback->java_body_buf);
-    if (read_position != callback->native_body_buf.len) {
+    size_t read_position = aws_jni_byte_buffer_get_position(env, callback->buf_pair->java_buf);
+    if (read_position != callback->buf_pair->native_buf.len) {
         AWS_LOGF_ERROR(AWS_LS_HTTP_STREAM, "id=%p: ByteBuffer.remaining() > 0 after onResponseBody", (void *)stream);
         return aws_raise_error(AWS_ERROR_HTTP_CALLBACK_FAILURE);
     }
 
     // Publish to Java succeeded, set resp body buffer position to zero
-    callback->native_body_buf.len = 0;
+    callback->buf_pair->native_buf.len = 0;
     *out_window_update_size = window_increment;
     return AWS_OP_SUCCESS;
 }
@@ -434,7 +438,7 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
 
     while (body_in_remaining.len > 0) {
         size_t curr_window_increment = 0;
-        aws_byte_buf_transfer_best_effort(&callback->native_body_buf, &body_in_remaining);
+        aws_byte_buf_transfer_best_effort(&callback->buf_pair->native_buf, &body_in_remaining);
 
         int result = s_resp_body_publish_to_java(stream, callback, &curr_window_increment);
         if (result != AWS_OP_SUCCESS) {
@@ -488,10 +492,10 @@ static int s_native_outgoing_body_read(struct aws_input_stream *input_stream, st
     uint8_t *out = &(dst->buffer[dst->len]);
     size_t out_remaining = dst->capacity - dst->len;
 
-    size_t buf_capacity = callback->native_body_buf.capacity;
+    size_t buf_capacity = callback->buf_pair->native_buf.capacity;
     size_t request_size = (buf_capacity > out_remaining) ? out_remaining : buf_capacity;
 
-    jobject jByteBuffer = callback->java_body_buf;
+    jobject jByteBuffer = callback->buf_pair->java_buf;
 
     aws_jni_byte_buffer_set_position(env, jByteBuffer, 0);
     aws_jni_byte_buffer_set_limit(env, jByteBuffer, (jint)request_size);
@@ -510,7 +514,7 @@ static int s_native_outgoing_body_read(struct aws_input_stream *input_stream, st
     size_t amt_written = aws_jni_byte_buffer_get_position(env, jByteBuffer);
     AWS_FATAL_ASSERT(amt_written <= out_remaining);
 
-    memcpy(out, callback->native_body_buf.buffer, amt_written);
+    memcpy(out, callback->buf_pair->native_buf.buffer, amt_written);
     dst->len += amt_written;
 
     if (isDone) {
@@ -576,8 +580,8 @@ static bool s_fill_out_request(
 JNIEXPORT jobject JNICALL Java_software_amazon_awssdk_crt_http_HttpConnection_httpConnectionMakeRequest(
     JNIEnv *env,
     jclass jni_class,
+    jlong jni_conn_manager_ptr,
     jlong jni_connection,
-    jint jni_resp_body_buf_size,
     jstring jni_method,
     jstring jni_uri,
     jobjectArray jni_headers,
@@ -585,7 +589,13 @@ JNIEXPORT jobject JNICALL Java_software_amazon_awssdk_crt_http_HttpConnection_ht
 
     (void)jni_class;
 
+    struct jni_conn_manager *jni_conn_manager = (struct jni_conn_manager *)jni_conn_manager_ptr;
     struct aws_http_connection *native_conn = (struct aws_http_connection *)jni_connection;
+
+    if (!jni_conn_manager) {
+        aws_jni_throw_runtime_exception(env, "HttpConnection.MakeRequest: Invalid jni_conn_manager_ptr");
+        return (jobject)NULL;
+    }
 
     if (!native_conn) {
         aws_jni_throw_runtime_exception(env, "HttpConnection.MakeRequest: Invalid jni_connection");
@@ -597,8 +607,7 @@ JNIEXPORT jobject JNICALL Java_software_amazon_awssdk_crt_http_HttpConnection_ht
         return (jobject)NULL;
     }
 
-    struct http_stream_callback_data *callback_data =
-        http_stream_callback_alloc(env, jni_resp_body_buf_size, jni_crt_http_callback_handler);
+    struct http_stream_callback_data *callback_data = http_stream_callback_alloc(env, jni_conn_manager, jni_crt_http_callback_handler);
     if (!callback_data) {
         // Exception already thrown
         return (jobject)NULL;

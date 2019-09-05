@@ -35,6 +35,8 @@
 #include <aws/http/connection_manager.h>
 #include <aws/http/http.h>
 
+#include "http_connection_manager.h"
+
 /* on 32-bit platforms, casting pointers to longs throws a warning we don't need */
 #if UINTPTR_MAX == 0xffffffff
 #    if defined(_MSC_VER)
@@ -53,6 +55,7 @@ static struct {
     jmethodID onShutdownComplete;
 } s_http_connection_manager;
 
+
 void s_cache_http_conn_manager(JNIEnv *env) {
     jclass cls = (*env)->FindClass(env, "software/amazon/awssdk/crt/http/HttpConnectionPoolManager");
     AWS_FATAL_ASSERT(cls);
@@ -64,23 +67,58 @@ void s_cache_http_conn_manager(JNIEnv *env) {
     AWS_FATAL_ASSERT(s_http_connection_manager.onShutdownComplete);
 }
 
-struct http_conn_manager_callback_data {
-    JavaVM *jvm;
-    jobject java_http_conn_manager;
-};
-
 static void s_on_http_conn_manager_shutdown_complete_callback(void *user_data) {
 
-    struct http_conn_manager_callback_data *callback = (struct http_conn_manager_callback_data *)user_data;
-    JNIEnv *env = aws_jni_get_thread_env(callback->jvm);
+    struct jni_conn_manager *jni_conn_manager = (struct jni_conn_manager *)user_data;
+    aws_mutex_lock(&jni_conn_manager->rw_lock);
+
+
+    JNIEnv *env = aws_jni_get_thread_env(jni_conn_manager->jvm);
 
     AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION_MANAGER, "ConnManager Shutdown Complete");
 
-    (*env)->CallVoidMethod(env, callback->java_http_conn_manager, s_http_connection_manager.onShutdownComplete);
+    (*env)->CallVoidMethod(env, jni_conn_manager->java_conn_manager, s_http_connection_manager.onShutdownComplete);
+
+    struct aws_allocator *allocator = aws_jni_get_allocator();
+    size_t num_nodes = 0;
+    while (!aws_linked_list_empty(&jni_conn_manager->idle_java_native_buf_pairs)) {
+        struct aws_linked_list_node *node = aws_linked_list_pop_front(&jni_conn_manager->idle_java_native_buf_pairs);
+        struct jni_byte_buf_pair *pair = AWS_CONTAINER_OF(node, struct jni_byte_buf_pair, list_handle);
+        (*env)->DeleteGlobalRef(env, pair->java_buf);
+        aws_byte_buf_clean_up(&pair->native_buf);
+        aws_mem_release(allocator, node);
+        num_nodes++;
+    }
+
+    /* Make sure we free'd the same number of Buffers that we allocated */
+    AWS_FATAL_ASSERT(jni_conn_manager->max_connections == num_nodes);
 
     // We're done with this callback data, free it.
-    (*env)->DeleteGlobalRef(env, callback->java_http_conn_manager);
-    aws_mem_release(aws_jni_get_allocator(), user_data);
+    (*env)->DeleteGlobalRef(env, jni_conn_manager->java_conn_manager);
+    aws_mem_release(allocator, user_data);
+    aws_mutex_clean_up(&jni_conn_manager->rw_lock);
+}
+
+void aws_push_new_native_java_buf_pair(JNIEnv *env, struct aws_allocator *allocator, struct aws_linked_list *list, size_t body_buf_size) {
+
+    struct jni_byte_buf_pair *buf_pair = aws_mem_acquire(allocator, sizeof(struct jni_byte_buf_pair));
+
+    AWS_FATAL_ASSERT(buf_pair != NULL);
+
+    /* Pre-allocate a Native buffer and Java Direct ByteBuffer so that we don't create a new Java Object for each Http
+     * Request.
+     */
+
+    int result = aws_byte_buf_init(&buf_pair->native_buf, allocator, body_buf_size);
+    AWS_FATAL_ASSERT(result == AWS_OP_SUCCESS);
+
+    jobject java_buf = aws_jni_direct_byte_buffer_from_byte_buf(env, &buf_pair->native_buf);
+    AWS_FATAL_ASSERT(java_buf != NULL);
+
+    /* Tell the JVM we have a reference to the Java ByteBuffer (so it's not GC'd) */
+    buf_pair->java_buf = (*env)->NewGlobalRef(env, java_buf);
+
+    aws_linked_list_push_front(list, &buf_pair->list_handle);
 }
 
 JNIEXPORT jlong JNICALL Java_software_amazon_awssdk_crt_http_HttpConnectionPoolManager_httpConnectionManagerNew(
@@ -90,6 +128,7 @@ JNIEXPORT jlong JNICALL Java_software_amazon_awssdk_crt_http_HttpConnectionPoolM
     jlong jni_client_bootstrap,
     jlong jni_socket_options,
     jlong jni_tls_ctx,
+    jint jni_buf_size,
     jint jni_window_size,
     jstring jni_endpoint,
     jint jni_port,
@@ -112,6 +151,7 @@ JNIEXPORT jlong JNICALL Java_software_amazon_awssdk_crt_http_HttpConnectionPoolM
     }
 
     struct aws_allocator *allocator = aws_jni_get_allocator();
+    AWS_FATAL_ASSERT(allocator != NULL);
     struct aws_byte_cursor endpoint = aws_jni_byte_cursor_from_jstring(env, jni_endpoint);
 
     if (jni_port <= 0 || 65535 < jni_port) {
@@ -140,11 +180,24 @@ JNIEXPORT jlong JNICALL Java_software_amazon_awssdk_crt_http_HttpConnectionPoolM
         aws_tls_connection_options_set_server_name(&tls_conn_options, allocator, &endpoint);
     }
 
-    struct http_conn_manager_callback_data *callback_data =
-        aws_mem_acquire(allocator, sizeof(struct http_conn_manager_callback_data));
-    callback_data->java_http_conn_manager = (*env)->NewGlobalRef(env, conn_manager_jobject);
+    struct jni_conn_manager *jni_conn_manager = aws_mem_acquire(allocator, sizeof(struct jni_conn_manager));
+    aws_mutex_init(&jni_conn_manager->rw_lock);
+    aws_mutex_lock(&jni_conn_manager->rw_lock);
 
-    jint jvmresult = (*env)->GetJavaVM(env, &callback_data->jvm);
+    jni_conn_manager->java_conn_manager = (*env)->NewGlobalRef(env, conn_manager_jobject);;
+    jni_conn_manager->max_connections = (size_t)jni_max_conns;
+    jni_conn_manager->buf_size = (size_t)jni_buf_size;
+
+    /* Setup the Linked List */
+    aws_linked_list_init(&jni_conn_manager->idle_java_native_buf_pairs);
+
+    for (int i = 0; i < jni_conn_manager->max_connections; i++) {
+        /* TODO: If/when Http2 support becomes available and we have >1 HttpStreams per HttpConnection, we'll need to
+         * add another for loop here for the expected max number of Streams per Conn. */
+        aws_push_new_native_java_buf_pair(env, allocator, &jni_conn_manager->idle_java_native_buf_pairs, (size_t)jni_buf_size);
+    }
+
+    jint jvmresult = (*env)->GetJavaVM(env, &jni_conn_manager->jvm);
     (void)jvmresult;
     AWS_FATAL_ASSERT(jvmresult == 0);
 
@@ -157,37 +210,50 @@ JNIEXPORT jlong JNICALL Java_software_amazon_awssdk_crt_http_HttpConnectionPoolM
     manager_options.port = port;
     manager_options.max_connections = (size_t)jni_max_conns;
     manager_options.shutdown_complete_callback = &s_on_http_conn_manager_shutdown_complete_callback;
-    manager_options.shutdown_complete_user_data = callback_data;
+    manager_options.shutdown_complete_user_data = jni_conn_manager;
 
     if (use_tls) {
         manager_options.tls_connection_options = &tls_conn_options;
     }
 
+
     struct aws_http_connection_manager *conn_manager = aws_http_connection_manager_new(allocator, &manager_options);
+
+    jni_conn_manager->native_conn_manager = conn_manager;
+    aws_mutex_unlock(&jni_conn_manager->rw_lock);
+
 
     if (use_tls) {
         aws_tls_connection_options_clean_up(&tls_conn_options);
     }
 
-    return (jlong)conn_manager;
+    return (jlong)jni_conn_manager;
 }
 
 JNIEXPORT void JNICALL Java_software_amazon_awssdk_crt_http_HttpConnectionPoolManager_httpConnectionManagerRelease(
     JNIEnv *env,
     jclass jni_class,
-    jlong jni_conn_manager) {
+    jlong jni_conn_manager_ptr) {
 
     (void)jni_class;
 
-    struct aws_http_connection_manager *conn_manager = (struct aws_http_connection_manager *)jni_conn_manager;
+    struct jni_conn_manager *jni_conn_manager = (struct jni_conn_manager *)jni_conn_manager_ptr;
 
-    if (!conn_manager) {
+    if (!jni_conn_manager) {
         aws_jni_throw_runtime_exception(env, "Connection Manager can't be null");
         return;
     }
 
-    AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "Releasing ConnManager: id: %p", (void *)jni_conn_manager);
-    aws_http_connection_manager_release(conn_manager);
+    AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "Releasing ConnManager: id: %p", (void *)jni_conn_manager_ptr);
+
+    aws_mutex_lock(&jni_conn_manager->rw_lock);
+
+    struct aws_http_connection_manager *native_conn_manager = jni_conn_manager->native_conn_manager;
+    jni_conn_manager->native_conn_manager = NULL;
+    aws_http_connection_manager_release(native_conn_manager);
+
+    aws_mutex_unlock(&jni_conn_manager->rw_lock);
+
 }
 
 static void s_on_http_conn_acquisition_callback(
@@ -195,8 +261,8 @@ static void s_on_http_conn_acquisition_callback(
     int error_code,
     void *user_data) {
 
-    struct http_conn_manager_callback_data *callback = (struct http_conn_manager_callback_data *)user_data;
-    JNIEnv *env = aws_jni_get_thread_env(callback->jvm);
+    struct jni_conn_manager *jni_conn_manager = (struct jni_conn_manager *)user_data;
+    JNIEnv *env = aws_jni_get_thread_env(jni_conn_manager->jvm);
     jlong jni_connection = (jlong)connection;
     jint jni_error_code = (jint)error_code;
 
@@ -209,14 +275,10 @@ static void s_on_http_conn_acquisition_callback(
 
     (*env)->CallVoidMethod(
         env,
-        callback->java_http_conn_manager,
+        jni_conn_manager->java_conn_manager,
         s_http_connection_manager.onConnectionAcquired,
         jni_connection,
         jni_error_code);
-
-    // We're done with this callback data, free it.
-    (*env)->DeleteGlobalRef(env, callback->java_http_conn_manager);
-    aws_mem_release(aws_jni_get_allocator(), user_data);
 }
 
 JNIEXPORT void JNICALL
@@ -224,30 +286,24 @@ JNIEXPORT void JNICALL
         JNIEnv *env,
         jclass jni_class,
         jobject conn_manager_jobject,
-        jlong jni_conn_manager) {
+        jlong jni_conn_manager_ptr) {
 
     (void)jni_class;
 
-    struct aws_http_connection_manager *conn_manager = (struct aws_http_connection_manager *)jni_conn_manager;
-
-    if (!conn_manager) {
+    if (!jni_conn_manager_ptr) {
         aws_jni_throw_runtime_exception(env, "Connection Manager can't be null");
         return;
     }
 
+    struct jni_conn_manager *jni_conn_manager = (struct jni_conn_manager *)jni_conn_manager_ptr;
+    struct aws_http_connection_manager *conn_manager = jni_conn_manager->native_conn_manager;
+
     AWS_LOGF_DEBUG(AWS_LS_HTTP_CONNECTION, "Requesting a new connection from conn_manager: %p", (void *)conn_manager);
 
-    struct aws_allocator *allocator = aws_jni_get_allocator();
-    struct http_conn_manager_callback_data *callback_data =
-        aws_mem_acquire(allocator, sizeof(struct http_conn_manager_callback_data));
-    callback_data->java_http_conn_manager = (*env)->NewGlobalRef(env, conn_manager_jobject);
 
-    jint jvmresult = (*env)->GetJavaVM(env, &callback_data->jvm);
-    (void)jvmresult;
-    AWS_FATAL_ASSERT(jvmresult == 0);
 
     aws_http_connection_manager_acquire_connection(
-        conn_manager, &s_on_http_conn_acquisition_callback, (void *)callback_data);
+        conn_manager, &s_on_http_conn_acquisition_callback, (void *)jni_conn_manager);
 }
 
 JNIEXPORT void JNICALL

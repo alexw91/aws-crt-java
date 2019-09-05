@@ -15,6 +15,7 @@
 package software.amazon.awssdk.crt.http;
 
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -32,6 +33,7 @@ import software.amazon.awssdk.crt.io.TlsContext;
  * Manages a Pool of Http Connections
  */
 public class HttpConnectionPoolManager extends CrtResource {
+    public static final int DEFAULT_MAX_BUFFER_SIZE = 16 * 1024;
     public static final int DEFAULT_MAX_WINDOW_SIZE = Integer.MAX_VALUE;
     public static final int DEFAULT_MAX_CONNECTIONS = 2;
     private static final String HTTP = "http";
@@ -42,6 +44,7 @@ public class HttpConnectionPoolManager extends CrtResource {
     private final ClientBootstrap clientBootstrap;
     private final SocketOptions socketOptions;
     private final TlsContext tlsContext;
+    private final int bufferSize;
     private final int windowSize;
     private final URI uri;
     private final int port;
@@ -56,11 +59,11 @@ public class HttpConnectionPoolManager extends CrtResource {
     private final Queue<CompletableFuture<HttpConnection>> connectionAcquisitionRequests = new ConcurrentLinkedQueue<>();
 
     public HttpConnectionPoolManager(ClientBootstrap clientBootstrap, SocketOptions socketOptions, TlsContext tlsContext,  URI uri) {
-        this(clientBootstrap, socketOptions, tlsContext, uri, DEFAULT_MAX_WINDOW_SIZE, DEFAULT_MAX_CONNECTIONS);
+        this(clientBootstrap, socketOptions, tlsContext, uri, DEFAULT_MAX_BUFFER_SIZE, DEFAULT_MAX_WINDOW_SIZE, DEFAULT_MAX_CONNECTIONS);
     }
 
     public HttpConnectionPoolManager(ClientBootstrap clientBootstrap, SocketOptions socketOptions, TlsContext tlsContext,
-                                      URI uri, int windowSize, int maxConnections) {
+                                      URI uri, int bufferSize, int windowSize, int maxConnections) {
 
         if (uri == null) {  throw new IllegalArgumentException("URI must not be null"); }
         if (uri.getScheme() == null) { throw new IllegalArgumentException("URI does not have a Scheme"); }
@@ -83,6 +86,7 @@ public class HttpConnectionPoolManager extends CrtResource {
         this.clientBootstrap = clientBootstrap;
         this.socketOptions = socketOptions;
         this.tlsContext = tlsContext;
+        this.bufferSize = bufferSize;
         this.windowSize = windowSize;
         this.uri = uri;
         this.port = port;
@@ -93,6 +97,7 @@ public class HttpConnectionPoolManager extends CrtResource {
                                             clientBootstrap.native_ptr(),
                                             socketOptions.native_ptr(),
                                             useTls ? tlsContext.native_ptr() : 0,
+                                            bufferSize,
                                             windowSize,
                                             uri.getHost(),
                                             port,
@@ -215,6 +220,7 @@ public class HttpConnectionPoolManager extends CrtResource {
                                                         long client_bootstrap,
                                                         long socketOptions,
                                                         long tlsContext,
+                                                        int bufferSize,
                                                         int windowSize,
                                                         String endpoint,
                                                         int port,
