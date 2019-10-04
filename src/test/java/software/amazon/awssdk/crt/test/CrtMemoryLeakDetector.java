@@ -1,10 +1,12 @@
 package software.amazon.awssdk.crt.test;
 
+import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import javax.management.MBeanServerConnection;
+import javax.management.ObjectName;
 import org.junit.Assert;
-
 import software.amazon.awssdk.crt.Log;
 
 /**
@@ -14,6 +16,7 @@ import software.amazon.awssdk.crt.Log;
 public class CrtMemoryLeakDetector {
     // Allow up to 512 byte increase in memory usage between CRT Test Runs
     private final static int DEFAULT_ALLOWED_MEDIAN_MEMORY_BYTE_DELTA = 1024;
+    private final static int DEFAULT_ALLOWED_MEDIAN_THREAD_COUNT_DELTA = 0;
     private final static int DEFAULT_NUM_LEAK_TEST_ITERATIONS = 20;
 
     private static long getEstimatedMemoryInUse() {
@@ -39,30 +42,53 @@ public class CrtMemoryLeakDetector {
         leakCheck(DEFAULT_NUM_LEAK_TEST_ITERATIONS, DEFAULT_ALLOWED_MEDIAN_MEMORY_BYTE_DELTA, fn);
     }
 
-    public static void leakCheck(int numIterations, int maxLeakage, Callable<Void> fn) throws Exception {
+
+    private static List<Long> getDeltaMeasurements(List<Long> measurementValues) {
+        List<Long> deltas = new ArrayList<>();
+        for (int i = 0; i < measurementValues.size() - 1; i++) {
+            long prev = measurementValues.get(i);
+            long curr = measurementValues.get(i + 1);
+            long delta = (curr - prev);
+            deltas.add(delta);
+        }
+
+        return deltas;
+    }
+
+    private static long getThreadCount() throws Exception {
+        MBeanServerConnection connection = ManagementFactory.getPlatformMBeanServer();
+        ObjectName threadMxBean = new ObjectName(ManagementFactory.THREAD_MXBEAN_NAME);
+        Integer threadCount = (Integer)connection.getAttribute(threadMxBean, "ThreadCount");
+        return threadCount;
+    }
+
+    public static void leakCheck(int numIterations, int maxMemoryLeakage, Callable<Void> fn) throws Exception {
         List<Long> memoryUsedMeasurements = new ArrayList<>();
+        List<Long> threadCountMeasurements = new ArrayList<>();
 
         for (int i = 0; i < numIterations; i++) {
             fn.call();
             memoryUsedMeasurements.add(getEstimatedMemoryInUse());
+            threadCountMeasurements.add(getThreadCount());
         }
 
-        List<Long> memUseDeltas = new ArrayList<>();
-        for (int i = 0; i < memoryUsedMeasurements.size() - 1; i++) {
-            long prev = memoryUsedMeasurements.get(i);
-            long curr = memoryUsedMeasurements.get(i + 1);
-            long delta = (curr - prev);
-            memUseDeltas.add(delta);
-        }
+        List<Long> memUseDeltas = getDeltaMeasurements(memoryUsedMeasurements);
+        List<Long> threadCountDeltas = getDeltaMeasurements(threadCountMeasurements);
 
         // Sort from smallest to largest
         memUseDeltas.sort(null);
+        threadCountDeltas.sort(null);
 
         // Get the median delta
         long p50MemoryUsageDelta = memUseDeltas.get(memUseDeltas.size() / 2);
+        long p50ThreadCountDelta = threadCountDeltas.get(threadCountDeltas.size() / 2);
 
-        if (p50MemoryUsageDelta > maxLeakage) {
-            Assert.fail(String.format("Potential Memory Leak!\nMemory usage Deltas: %s\nMeasurements: %s\nDiff: %d", memUseDeltas.toString(), memoryUsedMeasurements.toString(), p50MemoryUsageDelta - maxLeakage) );
+        if (p50MemoryUsageDelta > maxMemoryLeakage) {
+            Assert.fail(String.format("Potential Memory Leak!\nMemory usage Deltas: %s\nMeasurements: %s\nDiff: %d", memUseDeltas.toString(), memoryUsedMeasurements.toString(), p50MemoryUsageDelta - maxMemoryLeakage) );
+        }
+
+        if (p50ThreadCountDelta > DEFAULT_ALLOWED_MEDIAN_THREAD_COUNT_DELTA) {
+            Assert.fail(String.format("Potential Thread Leak!\nThread Count Deltas: %s\nMeasurements: %s", threadCountDeltas.toString(), threadCountDeltas.toString()));
         }
     }
 }
